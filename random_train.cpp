@@ -5,7 +5,7 @@ using namespace std;
 
 static char *line = NULL;
 static int max_line_len;
-
+double threshold = 0;
 /* 
  * generate random sequence from 0 to range-1, without repitiion, covering all
  * numbers from 0 to range-1
@@ -121,16 +121,30 @@ void __min_max_train(char* test_file_name, const int subprobNo)
 	read_problem(test_file_name);
 
 	/*
-	 * min prodecure of min-max, predict individually and vote
+	 * predict individually and vote
 	 */
 	cout<<"voting start\n";
 	start = clock();
 	vector<vector<int>> pred_vote(subprobNo*subprobNo);
 	for(int i=0;i<subprobNo*subprobNo;i++)
 		for(int k=0;k<prob.l;k++)
+		{		
+			
+			double* dec_values = new double[2];
+			int label = predict_values(sub_models[i],prob.x[k],dec_values);
+			//if(i==0)cout<<label<<' '<<estimates[0]<<endl;
+			if(dec_values[0] >= threshold)
+				pred_vote[i].push_back(1);
+			else
+				pred_vote[i].push_back(0);
+			delete [] dec_values;
+			/*
+			
 			pred_vote[i].push_back(predict(
 											sub_models[i],
 											prob.x[k]));
+			*/
+		}
 	stop = clock();
 	total += stop - start;
 
@@ -187,14 +201,36 @@ void __min_max_train(char* test_file_name, const int subprobNo)
 
 
 	/*
-	 * compute accuracy
+	 * compute F1
 	 */
-	int cnt=0;
+	int TP=0,FP=0,FN=0,TN=0;
+	double p,r,F1, TPR, FPR;
 	for(int i=0;i<prob.l;i++)
-	
-		if(after_max[i]==prob.y[i]) cnt++;
-	cout<<"total time: "<<(float)total/CLOCKS_PER_SEC<<'s'<<endl;
-	cout<<"accuracy = "<<(cnt*1.0/prob.l * 100)<<"\%\n";
+		if(prob.y[i] == 1)
+		{
+			if(after_max[i] == 1) //true positive
+				TP++;
+			else
+				FP++;
+		}
+		else//negative
+		{
+			if(after_max[i] == 1)
+				FN++;
+			else
+				TN++;
+		}
+
+	p = 1.*TP/(TP+FP);
+	r = 1.*TP/(TP+FN);
+	F1 =  2*r*p/(r+p);
+	TPR = 1.*TP/(TP+FN);
+	FPR = 1.*FP/(FP+TN);
+	cout<<"total time: "<<(float)total/CLOCKS_PER_SEC<<'s'<<endl
+		<<"threshold is "<<threshold<<endl
+		<<"F1 = "<<F1<<endl
+		<<"TPR = "<<TPR<<"\tFPR = "<<FPR<<endl
+		<<"accuracy = "<<((TP+TN)*1.0/prob.l * 100)<<"\%\n";
 }
 
 void min_max_train(int argc, char** argv)
@@ -507,6 +543,10 @@ void parse_command_line(int argc, char **argv, char *input_file_name, char *test
 			case 'C':
 				flag_find_C = 1;
 				i--;
+				break;
+
+			case 't':
+				threshold = atof(argv[i]);
 				break;
 
 			default:
