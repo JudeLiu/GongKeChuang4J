@@ -125,25 +125,26 @@ void __min_max_train(char* test_file_name, const int subprobNo)
 	 */
 	cout<<"voting start\n";
 	start = clock();
+	int nr_class = sub_models[0]->nr_class;
 	vector<vector<int>> pred_vote(subprobNo*subprobNo);
 	for(int i=0;i<subprobNo*subprobNo;i++)
 		for(int k=0;k<prob.l;k++)
 		{		
 			
-			double* dec_values = new double[2];
-			int label = predict_values(sub_models[i],prob.x[k],dec_values);
-			//if(i==0)cout<<label<<' '<<estimates[0]<<endl;
-			if(dec_values[0] >= threshold)
-				pred_vote[i].push_back(1);
+			double* dec_values = new double[nr_class];
+			double label = predict_values(sub_models[i],prob.x[k],dec_values);
+			//if(i==0)cout<<label<<' '<<dec_values[0]<<' '<<dec_values[1]<<endl;
+			if((dec_values[0] - threshold) >= 0.001 )
+				pred_vote[i].push_back(sub_models[i]->label[0]);
 			else
-				pred_vote[i].push_back(0);
+				pred_vote[i].push_back(sub_models[i]->label[1]);
 			delete [] dec_values;
-			/*
-			
+			/*			
 			pred_vote[i].push_back(predict(
 											sub_models[i],
 											prob.x[k]));
 			*/
+			
 		}
 	stop = clock();
 	total += stop - start;
@@ -206,6 +207,8 @@ void __min_max_train(char* test_file_name, const int subprobNo)
 	int TP=0,FP=0,FN=0,TN=0;
 	double p,r,F1, TPR, FPR;
 	for(int i=0;i<prob.l;i++)
+	{
+
 		if(prob.y[i] == 1)
 		{
 			if(after_max[i] == 1) //true positive
@@ -220,17 +223,20 @@ void __min_max_train(char* test_file_name, const int subprobNo)
 			else
 				TN++;
 		}
+	}
 
 	p = 1.*TP/(TP+FP);
 	r = 1.*TP/(TP+FN);
-	F1 =  2*r*p/(r+p);
+	F1 = 2*r*p/(r+p);
 	TPR = 1.*TP/(TP+FN);
 	FPR = 1.*FP/(FP+TN);
-	cout<<"total time: "<<(float)total/CLOCKS_PER_SEC<<'s'<<endl
+	cout<<"---------------------------------------------------\n"
+		<<"total time: "<<(float)total/CLOCKS_PER_SEC<<'s'<<endl
 		<<"threshold is "<<threshold<<endl
+		<<"TP = "<<TP<<"\tFP = "<<FP<<"\tFN = "<<FN<<"\tTN = "<<TN<<endl
 		<<"F1 = "<<F1<<endl
 		<<"TPR = "<<TPR<<"\tFPR = "<<FPR<<endl
-		<<"accuracy = "<<((TP+TN)*1.0/prob.l * 100)<<"\%\n";
+		<<"accuracy = "<<((TP+TN)*1.0/prob.l * 100)<<"%\n";
 }
 
 void min_max_train(int argc, char** argv)
@@ -367,49 +373,6 @@ static char* readline(FILE *input)
             break;
     }
     return line;
-}
-
-int train_main(int argc, char **argv)
-{
-	char input_file_name[1024];
-	char model_file_name[1024];
-	const char *error_msg;
-
-	parse_command_line(argc, argv, input_file_name, model_file_name);
-	read_problem(input_file_name);
-	error_msg = check_parameter(&prob,&param);
-
-	if(error_msg)
-	{
-		fprintf(stderr,"ERROR: %s\n",error_msg);
-		exit(1);
-	}
-
-	if (flag_find_C)
-	{
-		do_find_parameter_C();
-	}
-	else if(flag_cross_validation)
-	{
-		do_cross_validation();
-	}
-	else
-	{
-		model_=train(&prob, &param);
-		if(save_model(model_file_name, model_))
-		{
-			fprintf(stderr,"can't save model to file %s\n",model_file_name);
-			exit(1);
-		}
-		free_and_destroy_model(&model_);
-	}
-	destroy_param(&param);
-	free(prob.y);
-	free(prob.x);
-	free(x_space);
-	free(line);
-
-	return 0;
 }
 
 void do_find_parameter_C()
