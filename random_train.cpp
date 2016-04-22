@@ -8,6 +8,8 @@ static int max_line_len;
 double threshold = 0;
 int subprobNo = 3;
 const char* model_name = "model/random_minmax";
+bool transform_train_set = false;
+bool transform_test_set = false;
 
 int main(int argc, char** argv)
 {
@@ -127,11 +129,17 @@ void __min_max_train(char* test_file_name)
 	total = stop-start;
 	cout<<"subproblem training cost: "<<total<<endl<<endl;
 
-	// read test set
+	/*
+	 * read test set
+	 *
+	 */
+	if(transform_test_set)
+		transformLabel(test_file_name);
 	read_problem(test_file_name);
 
 	/*
 	 * predict individually and vote
+	 *
 	 */
 	cout<<"voting start\n";
 	start = clock();
@@ -276,7 +284,8 @@ void min_max_train(int argc, char** argv)
 	parse_command_line(argc, argv, input_file_name, test_file_name);
 
 	//cout<<"transforming data format\n";
-	//transformLabel(input_file_name);
+	if(transform_train_set)
+		transformLabel(input_file_name);
 
 	read_problem(input_file_name);
 	error_msg = check_parameter(&prob,&param);
@@ -466,6 +475,17 @@ void parse_command_line(int argc, char **argv, char *input_file_name, char *test
 
 			case 'n':
 				subprobNo = atoi(argv[i]);
+				break;
+
+			case 'f':
+				transform_train_set = true;
+				i--;
+				break;
+
+			case 'F':
+				transform_test_set = true;
+				i--;
+				break;
 
 			default:
 				fprintf(stderr,"unknown option: -%c\n", argv[i-1][1]);
@@ -694,6 +714,8 @@ void exit_with_help()
     "-q : quiet mode (no outputs)\n"
     "-t : threshold\n"
     "-n : subproblem number\n"
+    "-f : enable transforming labels of train set\n"
+    "-F : enable transforming labels of test set\n"
     );
     exit(1);
 }
