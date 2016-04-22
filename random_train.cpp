@@ -6,6 +6,16 @@ using namespace std;
 static char *line = NULL;
 static int max_line_len;
 double threshold = 0;
+int subprobNo = 3;
+const char* model_name = "model/random_minmax";
+
+int main(int argc, char** argv)
+{
+	min_max_train(argc,argv);
+	//test_genRandomIndex();
+	return 0;
+}
+
 /* 
  * generate random sequence from 0 to range-1, without repitiion, covering all
  * numbers from 0 to range-1
@@ -30,7 +40,7 @@ vector<int> genRandomIndex(unsigned int range)
  * decompose origin training set into 6 groups, 3 A, 3 not A
  * thus totally 9 subproblems(for example)
  */
-void __min_max_train(char* test_file_name, const int subprobNo)
+void __min_max_train(char* test_file_name)
 {
 	srand(time(NULL));
 
@@ -200,6 +210,23 @@ void __min_max_train(char* test_file_name, const int subprobNo)
 	total += stop - start;
 	cout<<"MAX cost: "<<(stop - start)<<endl<<endl;
 
+	/*
+	 * save models
+	 */
+	char **model_file_name = new char*[subprobNo*subprobNo];
+	for(int i=0;i<subprobNo*subprobNo;i++)
+	{
+		model_file_name[i] = new char[30];
+		sprintf(model_file_name[i],"%s_%d",model_name,i);
+		if(save_model(model_file_name[i], sub_models[i]))
+		{
+			fprintf(stderr,"can't save model to file %s\n",model_file_name[i]);
+			exit(1);
+		}
+		free_and_destroy_model(&sub_models[i]);
+		delete model_file_name[i];
+	}
+	delete [] model_file_name;
 
 	/*
 	 * compute F1
@@ -247,11 +274,15 @@ void min_max_train(int argc, char** argv)
 	const char *error_msg;
 
 	parse_command_line(argc, argv, input_file_name, test_file_name);
+
+	//cout<<"transforming data format\n";
+	//transformLabel(input_file_name);
+
 	read_problem(input_file_name);
 	error_msg = check_parameter(&prob,&param);
 
 	int subprobNo = 3;
-	__min_max_train(test_file_name,subprobNo);
+	__min_max_train(test_file_name);
 
 	destroy_param(&param);
 	free(prob.y);
@@ -284,149 +315,70 @@ void min_max_train(int argc, char** argv)
 		}
 		free_and_destroy_model(&model_);
 	}
-*/
+	*/
 }
 
-void test_genRandomIndex()
+/*
+ * liblinear cannot read the origin data set provided by Prof. so we need to transform the format of label.
+ *
+ * Transform origin labels, such as A01B/03/08. If origin class is A, no matter the subclass or section or group
+ * then transform the label to 1; otherwise to 0.
+ *
+ * @param filename : the filename of data. The name of transformed file new_${filename}
+ *
+ * @return None
+ *
+ */
+void transformLabel(char* filename)
 {
-	vector<int> res = genRandomIndex(100);
-	sort(res.begin(),res.end());
-	for(auto iter:res)
-		cout<<iter<<' ';
-	cout<<endl;
-}
+	ifstream fin(filename);
+	char *s = new char[1024];
+	s = strdup(filename);
+	sprintf(filename,"new_%s",s);
+	delete [] s;
 
-int main(int argc, char** argv)
-{
-	min_max_train(argc,argv);
-	//test_genRandomIndex();
-	return 0;
-}
+	ofstream fout(filename);
 
+	string str;
 
-void exit_input_error(int line_num)
-{
-	fprintf(stderr,"Wrong input format at line %d\n", line_num);
-	exit(1);
-}
+	getline(fin,str);
 
-void print_null(const char *s) {}
-
-void exit_with_help()
-{
-    printf(
-    "Usage: train [options] training_set_file [model_file]\n"
-    "options:\n"
-    "-s type : set type of solver (default 1)\n"
-    "  for multi-class classification\n"
-    "    0 -- L2-regularized logistic regression (primal)\n"
-    "    1 -- L2-regularized L2-loss support vector classification (dual)\n"
-    "    2 -- L2-regularized L2-loss support vector classification (primal)\n"
-    "    3 -- L2-regularized L1-loss support vector classification (dual)\n"
-    "    4 -- support vector classification by Crammer and Singer\n"
-    "    5 -- L1-regularized L2-loss support vector classification\n"
-    "    6 -- L1-regularized logistic regression\n"
-    "    7 -- L2-regularized logistic regression (dual)\n"
-    "  for regression\n"
-    "   11 -- L2-regularized L2-loss support vector regression (primal)\n"
-    "   12 -- L2-regularized L2-loss support vector regression (dual)\n"
-    "   13 -- L2-regularized L1-loss support vector regression (dual)\n"
-    "-c cost : set the parameter C (default 1)\n"
-    "-p epsilon : set the epsilon in loss function of SVR (default 0.1)\n"
-    "-e epsilon : set tolerance of termination criterion\n"
-    "   -s 0 and 2\n"
-    "       |f'(w)|_2 <= eps*min(pos,neg)/l*|f'(w0)|_2,\n"
-    "       where f is the primal function and pos/neg are # of\n"
-    "       positive/negative data (default 0.01)\n"
-    "   -s 11\n"
-    "       |f'(w)|_2 <= eps*|f'(w0)|_2 (default 0.001)\n"
-    "   -s 1, 3, 4, and 7\n"
-    "       Dual maximal violation <= eps; similar to libsvm (default 0.1)\n"
-    "   -s 5 and 6\n"
-    "       |f'(w)|_1 <= eps*min(pos,neg)/l*|f'(w0)|_1,\n"
-    "       where f is the primal function (default 0.01)\n"
-    "   -s 12 and 13\n"
-    "       |f'(alpha)|_1 <= eps |f'(alpha0)|,\n"
-    "       where f is the dual function (default 0.1)\n"
-    "-B bias : if bias >= 0, instance x becomes [x; bias]; if < 0, no bias term added (default -1)\n"
-    "-wi weight: weights adjust the parameter C of different classes (see README for details)\n"
-    "-v n: n-fold cross validation mode\n"
-    "-C : find parameter C (only for -s 0 and 2)\n"
-    "-q : quiet mode (no outputs)\n"
-    );
-    exit(1);
-}
-
-static char* readline(FILE *input)
-{
-    int len;
-
-    if(fgets(line,max_line_len,input) == NULL)
-        return NULL;
-
-    while(strrchr(line,'\n') == NULL)
-    {
-        max_line_len *= 2;
-        line = (char *) realloc(line,max_line_len);
-        len = (int) strlen(line);
-        if(fgets(line+len,max_line_len-len,input) == NULL)
-            break;
-    }
-    return line;
-}
-
-void do_find_parameter_C()
-{
-	double start_C, best_C, best_rate;
-	double max_C = 1024;
-	if (flag_C_specified)
-		start_C = param.C;
-	else
-		start_C = -1.0;
-	printf("Doing parameter search with %d-fold cross validation.\n", nr_fold);
-	find_parameter_C(&prob, &param, nr_fold, start_C, max_C, &best_C, &best_rate);
-	printf("Best C = %g  CV accuracy = %g%%\n", best_C, 100.0*best_rate);
-}
-
-void do_cross_validation()
-{
-	int i;
-	int total_correct = 0;
-	double total_error = 0;
-	double sumv = 0, sumy = 0, sumvv = 0, sumyy = 0, sumvy = 0;
-	double *target = Malloc(double, prob.l);
-
-	cross_validation(&prob,&param,nr_fold,target);
-	if(param.solver_type == L2R_L2LOSS_SVR ||
-	   param.solver_type == L2R_L1LOSS_SVR_DUAL ||
-	   param.solver_type == L2R_L2LOSS_SVR_DUAL)
+	while(!fin.eof())
 	{
-		for(i=0;i<prob.l;i++)
+		//cout<<str<<endl;
+		//string l="";
+		if(str[0]=='A')
+			fout<<1;
+		else
+			fout<<0;
+		for(int i=0;i<str.size();i++)
 		{
-			double y = prob.y[i];
-			double v = target[i];
-			total_error += (v-y)*(v-y);
-			sumv += v;
-			sumy += y;
-			sumvv += v*v;
-			sumyy += y*y;
-			sumvy += v*y;
+			char ch = str[i];
+			if(ch == ' ')
+			{
+				//label.insert(l);
+				//string rest="";
+				string rest(str,i,str.size()-i);
+				//for(string::iterator ite=ch;ite!=str.end();ite++)
+					//rest+= *ite;
+				fout<<rest<<endl;
+				break;
+			}
+			else if(ch == ',')
+			{
+				//label.insert(l);
+				//cout<<l<<endl;
+				//l="";
+			}
+			else {}
+				//l+=ch;
 		}
-		printf("Cross Validation Mean squared error = %g\n",total_error/prob.l);
-		printf("Cross Validation Squared correlation coefficient = %g\n",
-				((prob.l*sumvy-sumv*sumy)*(prob.l*sumvy-sumv*sumy))/
-				((prob.l*sumvv-sumv*sumv)*(prob.l*sumyy-sumy*sumy))
-			  );
-	}
-	else
-	{
-		for(i=0;i<prob.l;i++)
-			if(target[i] == prob.y[i])
-				++total_correct;
-		printf("Cross Validation Accuracy = %g%%\n",100.0*total_correct/prob.l);
+		//getline(fin,str,100000,' ');
+		getline(fin,str);
 	}
 
-	free(target);
+	fin.close();
+	fout.close();
 }
 
 //void parse_command_line(int argc, char **argv, char *input_file_name, char *model_file_name)
@@ -511,6 +463,9 @@ void parse_command_line(int argc, char **argv, char *input_file_name, char *test
 			case 't':
 				threshold = atof(argv[i]);
 				break;
+
+			case 'n':
+				subprobNo = atoi(argv[i]);
 
 			default:
 				fprintf(stderr,"unknown option: -%c\n", argv[i-1][1]);
@@ -687,3 +642,131 @@ void read_problem(const char *filename)
 
 	fclose(fp);
 }
+
+void exit_input_error(int line_num)
+{
+	fprintf(stderr,"Wrong input format at line %d\n", line_num);
+	exit(1);
+}
+
+void print_null(const char *s) {}
+
+void exit_with_help()
+{
+    printf(
+    "Usage: train [options] training_set_file [model_file]\n"
+    "options:\n"
+    "-s type : set type of solver (default 1)\n"
+    "  for multi-class classification\n"
+    "    0 -- L2-regularized logistic regression (primal)\n"
+    "    1 -- L2-regularized L2-loss support vector classification (dual)\n"
+    "    2 -- L2-regularized L2-loss support vector classification (primal)\n"
+    "    3 -- L2-regularized L1-loss support vector classification (dual)\n"
+    "    4 -- support vector classification by Crammer and Singer\n"
+    "    5 -- L1-regularized L2-loss support vector classification\n"
+    "    6 -- L1-regularized logistic regression\n"
+    "    7 -- L2-regularized logistic regression (dual)\n"
+    "  for regression\n"
+    "   11 -- L2-regularized L2-loss support vector regression (primal)\n"
+    "   12 -- L2-regularized L2-loss support vector regression (dual)\n"
+    "   13 -- L2-regularized L1-loss support vector regression (dual)\n"
+    "-c cost : set the parameter C (default 1)\n"
+    "-p epsilon : set the epsilon in loss function of SVR (default 0.1)\n"
+    "-e epsilon : set tolerance of termination criterion\n"
+    "   -s 0 and 2\n"
+    "       |f'(w)|_2 <= eps*min(pos,neg)/l*|f'(w0)|_2,\n"
+    "       where f is the primal function and pos/neg are # of\n"
+    "       positive/negative data (default 0.01)\n"
+    "   -s 11\n"
+    "       |f'(w)|_2 <= eps*|f'(w0)|_2 (default 0.001)\n"
+    "   -s 1, 3, 4, and 7\n"
+    "       Dual maximal violation <= eps; similar to libsvm (default 0.1)\n"
+    "   -s 5 and 6\n"
+    "       |f'(w)|_1 <= eps*min(pos,neg)/l*|f'(w0)|_1,\n"
+    "       where f is the primal function (default 0.01)\n"
+    "   -s 12 and 13\n"
+    "       |f'(alpha)|_1 <= eps |f'(alpha0)|,\n"
+    "       where f is the dual function (default 0.1)\n"
+    "-B bias : if bias >= 0, instance x becomes [x; bias]; if < 0, no bias term added (default -1)\n"
+    "-wi weight: weights adjust the parameter C of different classes (see README for details)\n"
+    "-v n: n-fold cross validation mode\n"
+    "-C : find parameter C (only for -s 0 and 2)\n"
+    "-q : quiet mode (no outputs)\n"
+    "-t : threshold\n"
+    "-n : subproblem number\n"
+    );
+    exit(1);
+}
+
+static char* readline(FILE *input)
+{
+    int len;
+
+    if(fgets(line,max_line_len,input) == NULL)
+        return NULL;
+
+    while(strrchr(line,'\n') == NULL)
+    {
+        max_line_len *= 2;
+        line = (char *) realloc(line,max_line_len);
+        len = (int) strlen(line);
+        if(fgets(line+len,max_line_len-len,input) == NULL)
+            break;
+    }
+    return line;
+}
+
+void do_find_parameter_C()
+{
+	double start_C, best_C, best_rate;
+	double max_C = 1024;
+	if (flag_C_specified)
+		start_C = param.C;
+	else
+		start_C = -1.0;
+	printf("Doing parameter search with %d-fold cross validation.\n", nr_fold);
+	find_parameter_C(&prob, &param, nr_fold, start_C, max_C, &best_C, &best_rate);
+	printf("Best C = %g  CV accuracy = %g%%\n", best_C, 100.0*best_rate);
+}
+
+void do_cross_validation()
+{
+	int i;
+	int total_correct = 0;
+	double total_error = 0;
+	double sumv = 0, sumy = 0, sumvv = 0, sumyy = 0, sumvy = 0;
+	double *target = Malloc(double, prob.l);
+
+	cross_validation(&prob,&param,nr_fold,target);
+	if(param.solver_type == L2R_L2LOSS_SVR ||
+	   param.solver_type == L2R_L1LOSS_SVR_DUAL ||
+	   param.solver_type == L2R_L2LOSS_SVR_DUAL)
+	{
+		for(i=0;i<prob.l;i++)
+		{
+			double y = prob.y[i];
+			double v = target[i];
+			total_error += (v-y)*(v-y);
+			sumv += v;
+			sumy += y;
+			sumvv += v*v;
+			sumyy += y*y;
+			sumvy += v*y;
+		}
+		printf("Cross Validation Mean squared error = %g\n",total_error/prob.l);
+		printf("Cross Validation Squared correlation coefficient = %g\n",
+				((prob.l*sumvy-sumv*sumy)*(prob.l*sumvy-sumv*sumy))/
+				((prob.l*sumvv-sumv*sumv)*(prob.l*sumyy-sumy*sumy))
+			  );
+	}
+	else
+	{
+		for(i=0;i<prob.l;i++)
+			if(target[i] == prob.y[i])
+				++total_correct;
+		printf("Cross Validation Accuracy = %g%%\n",100.0*total_correct/prob.l);
+	}
+
+	free(target);
+}
+
