@@ -6,10 +6,11 @@ using namespace std;
 static char *line = NULL;
 static int max_line_len;
 double threshold = 0;
-int subprobNo = 3;
 const char* model_name = "model/random_minmax";
 bool transform_train_set = false;
 bool transform_test_set = false;
+int subprobNo_A = 2;
+int subprobNo_NA = 4;
 
 int main(int argc, char** argv)
 {
@@ -18,29 +19,8 @@ int main(int argc, char** argv)
 	return 0;
 }
 
-/* 
- * generate random sequence from 0 to range-1, without repitiion, covering all
- * numbers from 0 to range-1
- */
-vector<int> genRandomIndex(unsigned int range)
-{
-	vector<int> res;
-	vector<bool> exist(range,false);
-	while(res.size()<range)
-	{
-		int t = rand()%range;
-		if(!exist[t])
-		{
-			res.push_back(t);
-			exist[t] = true;
-		}		
-	}
-	return res;
-}
-
 /*
- * decompose origin training set into 6 groups, 3 A, 3 not A
- * thus totally 9 subproblems(for example)
+ * decompose origin training set into subprobNo_A*subprobNo_NA groups,
  */
 void __min_max_train(char* test_file_name)
 {
@@ -48,86 +28,100 @@ void __min_max_train(char* test_file_name)
 
 	/*
 	 * decompose orgin problem into two group
+	 * vector idxA contains the indices of data with label A
+	 * vector idxNA contains the indices of data with label other than A
 	 */
-	cout<<"start decomposing\n";
-	vector<int> randomIdx = genRandomIndex(prob.l);
-	vector<problem> sub_problems(subprobNo*subprobNo);
+	vector<int> idxA;
+	vector<int> idxNA;
+	for(int i=0;i<prob.l;i++)
+	{
+		if(prob.y[i] == 1)
+			idxA.push_back(i);
+		else
+			idxNA.push_back(i);
+	}
+	random_shuffle(idxA.begin(),idxA.end());
+	random_shuffle(idxNA.begin(), idxNA.end());
 
-	int spIdx = 0;
-	int l = prob.l/subprobNo/2;
+	int sublenA = idxA.size()/subprobNo_A;
+	int sublenNA = idxNA.size()/subprobNo_NA;
+
+	/*
+	 * divide A into subprobNo_A parts, and divide NA into subprobNA parts
+	 *
+	 * NOTICE that, i.e. idxA.size()/subprobA may have remainder
+	 * so the last part has to be processed specially
+	 */
+	vector<vector<int>> subtaskIdx_A(subprobNo_A);
+	vector<vector<int>> subtaskIdx_NA(subprobNo_NA);
+	for( int i = 0; i < subprobNo_A-1; i++ )
+		for( int j = 0; j < sublenA; j++ )
+			subtaskIdx_A[i].push_back(idxA[j+i*sublenA]);
+
+	int remainderFrom = sublenA*(subprobNo_A-1);
+	for(int j=remainderFrom;j<idxA.size();j++)
+		subtaskIdx_A[subprobNo_A-1].push_back(idxA[j]);
+
+
+	for(int i=0;i<subprobNo_NA-1;i++)
+		for(int j=0;j<sublenNA;j++)
+			subtaskIdx_NA[i].push_back(idxNA[j+i*sublenNA]);
+
+	remainderFrom = sublenNA*(subprobNo_NA-1);
+	for(int j=remainderFrom;j<idxNA.size();j++)
+		subtaskIdx_NA[subprobNo_NA-1].push_back(idxNA[j]);
+
+	vector<problem> sub_problems(subprobNo_A*subprobNo_NA);
+
+	cout<<"start decomposing\n";
 	/*
 	 * the whole set is divided to subprobNo parts, the last part may not
 	 * divisible by subprobNo, so it has to be processed specially
 	 */
-	for(int idx1=0;idx1<subprobNo;idx1++)
+	int spIdx = 0;
+	for(int idx1=0;idx1<subprobNo_A;idx1++)
 	{
-		for(int idx2=0;idx2<subprobNo;idx2++)
+		for(int idx2=0;idx2<subprobNo_NA;idx2++)
 		{
-			if(idx2 == subprobNo-1)
-			{
-				spIdx++;break;
-			}
-			sub_problems[spIdx].l = l*2;
+			int a_len = subtaskIdx_A[idx1].size();
+			int na_len = subtaskIdx_NA[idx2].size();
+			int subtaskLen = a_len + na_len;
+			sub_problems[spIdx].l = subtaskLen;
 			sub_problems[spIdx].bias = prob.bias;
-			sub_problems[spIdx].x = new feature_node*[l*2];
-			sub_problems[spIdx].y = new double[l*2];
+			sub_problems[spIdx].x = new feature_node*[subtaskLen];
+			sub_problems[spIdx].y = new double[subtaskLen];
 			sub_problems[spIdx].n = prob.n;
 
 			int i=0;
-			//copy 1/3 origin problem to sub_problems[spIdx] in each loop
-			for(i=0;i<l;i++)
+			for(i=0;i<a_len;i++)
 			{
-				int subscript = randomIdx[ i + idx1*l ];
+				int subscript = subtaskIdx_A[idx1][i];
 				
 				sub_problems[spIdx].x[i] = prob.x[subscript]; //copy of pointer
 				sub_problems[spIdx].y[i] = prob.y[subscript];
-			
-				subscript = randomIdx[ prob.l/2 + i + idx2*l]; // 3/6 + 0...1/6 + 0..2*1/6
-				sub_problems[spIdx].x[i+l] = prob.x[subscript];
-				sub_problems[spIdx].y[i+l] = prob.y[subscript];
+			}
+			for(i=0;i<na_len;i++)
+			{
+				int subscript = subtaskIdx_NA[idx2][i];
+				sub_problems[spIdx].x[i+a_len] = prob.x[subscript];
+				sub_problems[spIdx].y[i+a_len] = prob.y[subscript];
 			}
 			spIdx++;
 		}
 	}	
-	//deal with remainder
-	int extlen = l*2 + prob.l % (subprobNo*2);
-	for(int idx=0;idx<subprobNo;idx++)
-	{
-		int spIdx = (idx+1)*subprobNo - 1;
-
-		sub_problems[spIdx].l = extlen;
-		sub_problems[spIdx].bias = prob.bias;
-		sub_problems[spIdx].x = new feature_node*[extlen];
-		sub_problems[spIdx].y = new double[extlen];
-		sub_problems[spIdx].n = prob.n;
-
-		int i=0;
-		for(;i<l;i++)
-		{
-			int subscript = randomIdx[i + idx*l/2];
-			sub_problems[spIdx].x[i] = prob.x[subscript];
-			sub_problems[spIdx].y[i] = prob.y[subscript];
-		}
-		for(;i<extlen;i++)
-		{
-			int subscript = randomIdx[ (i-l) + (subprobNo*2-1)*l];
-			sub_problems[spIdx].x[i] = prob.x[subscript];
-			sub_problems[spIdx].y[i] = prob.y[subscript];
-		}
-	}
-
+	
 	//train subproblem seperately
 	cout<<"start training subproblem\n";
 	clock_t start = clock(),stop,total;
-	vector<model*> sub_models(subprobNo*subprobNo);
-	for(int i=0;i<subprobNo*subprobNo;i++)
+	vector<model*> sub_models(subprobNo_A*subprobNo_NA);
+	for(int i=0;i<sub_models.size();i++)
 	{
 		cout<<"training "<<i<<endl;
 		sub_models[i] = train(&sub_problems[i],&param);
 	}
 	stop = clock();
 	total = stop-start;
-	cout<<"subproblem training cost: "<<total<<endl<<endl;
+	cout<<"subproblem training cost: "<<total*1./CLOCKS_PER_SEC<<endl<<endl;
 
 	/*
 	 * read test set
@@ -144,26 +138,26 @@ void __min_max_train(char* test_file_name)
 	cout<<"voting start\n";
 	start = clock();
 	int nr_class = sub_models[0]->nr_class;
-	vector<vector<int>> pred_vote(subprobNo*subprobNo);
-	for(int i=0;i<subprobNo*subprobNo;i++)
+	vector<vector<int>> pred_vote(subprobNo_A * subprobNo_NA);
+	for(int i=0;i<pred_vote.size();i++)
+	{
 		for(int k=0;k<prob.l;k++)
-		{		
-			
+		{			
 			double* dec_values = new double[nr_class];
 			double label = predict_values(sub_models[i],prob.x[k],dec_values);
-			//if(i==0)cout<<label<<' '<<dec_values[0]<<' '<<dec_values[1]<<endl;
 			if((dec_values[0] - threshold) >= 0.001 )
 				pred_vote[i].push_back(sub_models[i]->label[0]);
 			else
 				pred_vote[i].push_back(sub_models[i]->label[1]);
 			delete [] dec_values;
-			/*			
+			/*
 			pred_vote[i].push_back(predict(
 											sub_models[i],
 											prob.x[k]));
 			*/
-			
 		}
+	}
+
 	stop = clock();
 	total += stop - start;
 
@@ -171,58 +165,58 @@ void __min_max_train(char* test_file_name)
 	 * count vote and do MIN
 	 */
 	cout<<"start MIN\n";
-	vector<vector<int>> after_min(subprobNo);
+	vector<vector<int>> minUnit(subprobNo_A);
 	spIdx = 0;
 	start = clock();
-	for(int idx1=0;idx1<subprobNo;idx1++)
+	for(int idx1=0;idx1<subprobNo_A;idx1++)
 	{
 		//initialize
 		for(int k=0;k<prob.l;k++)
-			after_min[idx1].push_back(0);
-		for(int idx2=0;idx2<subprobNo;idx2++)
+			minUnit[idx1].push_back(0);
+		for(int idx2=0;idx2<subprobNo_NA;idx2++)
 		{
 			//count vote
 			for(int k=0;k<prob.l;k++)
-				after_min[idx1][k] += pred_vote[spIdx][k];
+				minUnit[idx1][k] += pred_vote[spIdx][k];
 			spIdx++;
 		}
 		//MIN, if all predict i, the predict 1; otherwise predict 0
 		for(int k=0;k<prob.l;k++)
-			if(after_min[idx1][k] == subprobNo)
-				after_min[idx1][k] = 1;
+			if(minUnit[idx1][k] == subprobNo_NA)
+				minUnit[idx1][k] = 1;
 			else
-				after_min[idx1][k] = 0;
+				minUnit[idx1][k] = 0;
 	}
 	stop = clock();
 	total += stop - start;
-	cout<<"MIN cost: "<<(stop-start)<<endl<<endl;
+	cout<<"MIN cost: "<<(stop-start)*1./CLOCKS_PER_SEC<<endl<<endl;
 
 	/* 
 	 * do MAX, if one predict 1, then predict 1; otherwise predict 0
 	 */
 	cout<<"start MAX\n";
-	vector<int> after_max(prob.l,0);
+	vector<int> maxUnit(prob.l,0);
 	start = clock();
 	for(int i=0;i<prob.l;i++)
 	{
-		for(auto minIter : after_min)
+		for(auto minIter : minUnit)
 		{
-			after_max[i] += minIter[i];
+			maxUnit[i] += minIter[i];
 		}
-		if(after_max[i]>0)
-			after_max[i] = 1;
+		if(maxUnit[i]>0)
+			maxUnit[i] = 1;
 		else
-			after_max[i] = 0;
+			maxUnit[i] = 0;
 	}
 	stop = clock();
 	total += stop - start;
-	cout<<"MAX cost: "<<(stop - start)<<endl<<endl;
+	cout<<"MAX cost: "<<(stop - start)*1./CLOCKS_PER_SEC<<endl<<endl;
 
 	/*
 	 * save models
 	 */
-	char **model_file_name = new char*[subprobNo*subprobNo];
-	for(int i=0;i<subprobNo*subprobNo;i++)
+	char **model_file_name = new char*[subprobNo_A*subprobNo_NA];
+	for(int i=0;i<subprobNo_A*subprobNo_NA;i++)
 	{
 		model_file_name[i] = new char[30];
 		sprintf(model_file_name[i],"%s_%d",model_name,i);
@@ -246,14 +240,14 @@ void __min_max_train(char* test_file_name)
 
 		if(prob.y[i] == 1)
 		{
-			if(after_max[i] == 1) //true positive
+			if(maxUnit[i] == 1) //true positive
 				TP++;
 			else
 				FP++;
 		}
 		else//negative
 		{
-			if(after_max[i] == 1)
+			if(maxUnit[i] == 1)
 				FN++;
 			else
 				TN++;
@@ -266,7 +260,7 @@ void __min_max_train(char* test_file_name)
 	TPR = 1.*TP/(TP+FN);
 	FPR = 1.*FP/(FP+TN);
 	cout<<"---------------------------------------------------\n"
-		<<"total time: "<<(float)total/CLOCKS_PER_SEC<<'s'<<endl
+		<<"total time(including train, min, max): "<<(float)total/CLOCKS_PER_SEC<<'s'<<endl
 		<<"threshold is "<<threshold<<endl
 		<<"TP = "<<TP<<"\tFP = "<<FP<<"\tFN = "<<FN<<"\tTN = "<<TN<<endl
 		<<"F1 = "<<F1<<endl
@@ -290,9 +284,12 @@ void min_max_train(int argc, char** argv)
 	read_problem(input_file_name);
 	error_msg = check_parameter(&prob,&param);
 
-	int subprobNo = 3;
 	__min_max_train(test_file_name);
 
+	cout<<"parameters: ";
+	for(int i=1;i<argc;i++)
+		cout<<argv[i]<<' ';
+	cout<<endl<<endl;
 	destroy_param(&param);
 	free(prob.y);
 	free(prob.x);
@@ -304,34 +301,14 @@ void min_max_train(int argc, char** argv)
 		fprintf(stderr,"ERROR: %s\n",error_msg);
 		exit(1);
 	}
-	
-	/*
-	if (flag_find_C)
-	{
-		do_find_parameter_C();
-	}
-	else if(flag_cross_validation)
-	{
-		do_cross_validation();
-	}
-	else
-	{
-		model_=train(&prob, &param);
-		if(save_model(model_file_name, model_))
-		{
-			fprintf(stderr,"can't save model to file %s\n",model_file_name);
-			exit(1);
-		}
-		free_and_destroy_model(&model_);
-	}
-	*/
 }
 
 /*
- * liblinear cannot read the origin data set provided by Prof. so we need to transform the format of label.
+ * liblinear cannot read the origin data set provided by Prof. so we need to transform the format of labels 
+ * of origin data set.
  *
- * Transform origin labels, such as A01B/03/08. If origin class is A, no matter the subclass or section or group
- * then transform the label to 1; otherwise to 0.
+ * Transform origin labels, such as A01B/03/08. If the section is A, no matter what class or subclass 
+ * or group it is in, then transform the label to 1; otherwise to 0.
  *
  * @param filename : the filename of data. The name of transformed file new_${filename}
  *
@@ -474,7 +451,12 @@ void parse_command_line(int argc, char **argv, char *input_file_name, char *test
 				break;
 
 			case 'n':
-				subprobNo = atoi(argv[i]);
+				//subprobNo = atoi(argv[i]);
+				subprobNo_A = atoi(argv[i]);
+				break;
+
+			case 'N':
+				subprobNo_NA = atoi(argv[i]);
 				break;
 
 			case 'f':
@@ -713,7 +695,8 @@ void exit_with_help()
     "-C : find parameter C (only for -s 0 and 2)\n"
     "-q : quiet mode (no outputs)\n"
     "-t : threshold\n"
-    "-n : subproblem number\n"
+    "-n : subproblem number of label A\n"
+    "-N : subproblem number of label other than A\n"
     "-f : enable transforming labels of train set\n"
     "-F : enable transforming labels of test set\n"
     );

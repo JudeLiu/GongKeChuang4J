@@ -41,7 +41,7 @@ random_train: random_train.o
 random_train.o: random_train.cpp  linear.o tron.o blas/blas.a
 	$(CXX) -std=c++11 $(CFLAGS) -o random_train.o -c random_train.cpp
 
-random_train_omp: random_train_omp.cpp
+random_train_omp: random_train_omp.cpp linear.o tron.o blas/blas.a
 	$(CXX) $(CFLAGS) -std=c++11 -o random_train_omp random_train_omp.cpp linear.o tron.o $(LIBS) -fopenmp
 
 #liblinear_train_predict.o: liblinear_train_predict.cpp
