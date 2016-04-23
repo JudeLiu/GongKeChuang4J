@@ -3,4 +3,5 @@
 data/
 patch/
 backup/
-
+log/
+model/
