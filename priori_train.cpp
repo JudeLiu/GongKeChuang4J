@@ -5,173 +5,375 @@ using namespace std;
 
 static char *line = NULL;
 static int max_line_len;
+double threshold = 0;
+const char* model_name = "model/priori_minmax";
+bool transform_train_set = false;
+bool transform_test_set = false;
 
-void exit_input_error(int line_num)
+int main(int argc, char** argv)
 {
-	fprintf(stderr,"Wrong input format at line %d\n", line_num);
-	exit(1);
+	priori_min_max_train(argc,argv);
+	//test_genRandomIndex();
+	return 0;
 }
 
-void print_null(const char *s) {}
 
-void exit_with_help()
+/*
+ * decompose origin training set into subprobNo_A*subprobNo_NA groups,
+ */
+void __priori_min_max_train(char* train_set_name, char* test_set_name)
 {
-    printf(
-    "Usage: train [options] training_set_file [model_file]\n"
-    "options:\n"
-    "-s type : set type of solver (default 1)\n"
-    "  for multi-class classification\n"
-    "    0 -- L2-regularized logistic regression (primal)\n"
-    "    1 -- L2-regularized L2-loss support vector classification (dual)\n"
-    "    2 -- L2-regularized L2-loss support vector classification (primal)\n"
-    "    3 -- L2-regularized L1-loss support vector classification (dual)\n"
-    "    4 -- support vector classification by Crammer and Singer\n"
-    "    5 -- L1-regularized L2-loss support vector classification\n"
-    "    6 -- L1-regularized logistic regression\n"
-    "    7 -- L2-regularized logistic regression (dual)\n"
-    "  for regression\n"
-    "   11 -- L2-regularized L2-loss support vector regression (primal)\n"
-    "   12 -- L2-regularized L2-loss support vector regression (dual)\n"
-    "   13 -- L2-regularized L1-loss support vector regression (dual)\n"
-    "-c cost : set the parameter C (default 1)\n"
-    "-p epsilon : set the epsilon in loss function of SVR (default 0.1)\n"
-    "-e epsilon : set tolerance of termination criterion\n"
-    "   -s 0 and 2\n"
-    "       |f'(w)|_2 <= eps*min(pos,neg)/l*|f'(w0)|_2,\n"
-    "       where f is the primal function and pos/neg are # of\n"
-    "       positive/negative data (default 0.01)\n"
-    "   -s 11\n"
-    "       |f'(w)|_2 <= eps*|f'(w0)|_2 (default 0.001)\n"
-    "   -s 1, 3, 4, and 7\n"
-    "       Dual maximal violation <= eps; similar to libsvm (default 0.1)\n"
-    "   -s 5 and 6\n"
-    "       |f'(w)|_1 <= eps*min(pos,neg)/l*|f'(w0)|_1,\n"
-    "       where f is the primal function (default 0.01)\n"
-    "   -s 12 and 13\n"
-    "       |f'(alpha)|_1 <= eps |f'(alpha0)|,\n"
-    "       where f is the dual function (default 0.1)\n"
-    "-B bias : if bias >= 0, instance x becomes [x; bias]; if < 0, no bias term added (default -1)\n"
-    "-wi weight: weights adjust the parameter C of different classes (see README for details)\n"
-    "-v n: n-fold cross validation mode\n"
-    "-C : find parameter C (only for -s 0 and 2)\n"
-    "-q : quiet mode (no outputs)\n"
-    );
-    exit(1);
-}
+	srand(time(NULL));
+	const char* error_msg;
+	/*
+	 * read training set, sort and save the data by class
+	 */
 
-static char* readline(FILE *input)
-{
-    int len;
+	//TODO: parse location to get the correct file name
+	char transformed_train_set_name[1024];
+	sprintf(transformed_train_set_name,"data/new_train.txt");
 
-    if(fgets(line,max_line_len,input) == NULL)
-        return NULL;
+	if(transform_train_set)
+		read_problem(transformLabel(train_set_name));
+	else
+		read_problem(transformed_train_set_name);
 
-    while(strrchr(line,'\n') == NULL)
-    {
-        max_line_len *= 2;
-        line = (char *) realloc(line,max_line_len);
-        len = (int) strlen(line);
-        if(fgets(line+len,max_line_len-len,input) == NULL)
-            break;
-    }
-    return line;
-}
-
-int train_main(int argc, char **argv)
-{
-	char input_file_name[1024];
-	char model_file_name[1024];
-	const char *error_msg;
-
-	parse_command_line(argc, argv, input_file_name, model_file_name);
-	read_problem(input_file_name);
 	error_msg = check_parameter(&prob,&param);
-
 	if(error_msg)
 	{
 		fprintf(stderr,"ERROR: %s\n",error_msg);
 		exit(1);
 	}
 
-	if (flag_find_C)
+	/* 
+	 * save class in order to use this priori knowledge, 
+	 * for example, given the origin label A01B/33/12,A01B/9/00,A01B/39/18  1:0.2323 ....
+	 * we will save "A01" to the map idxA
+	 */
+	ifstream fin(train_set_name);
+	unordered_map<string,vector<int>> idxA;
+	unordered_map<string,vector<int>> idxNA;
+	string line;
+	getline(fin,line);
+	int lineNo = 0;
+	while(!fin.eof())
 	{
-		do_find_parameter_C();
+		string class_type = line.substr(0,3);
+		if(line[0] == 'A')
+			idxA[class_type].push_back(lineNo);
+		else
+			idxNA[class_type].push_back(lineNo);
+
+		getline(fin,line);
+		lineNo++;
 	}
-	else if(flag_cross_validation)
+	fin.close();
+	// save map to vector
+	vector<vector<int>> subtaskIdx_A;
+	vector<vector<int>> subtaskIdx_NA;
+	for(auto iter : idxA)
+		subtaskIdx_A.push_back(iter.second);
+	for(auto iter : idxNA)
+		subtaskIdx_NA.push_back(iter.second);
+	idxA.clear(); idxNA.clear();
+
+	int subprobNo_A = subtaskIdx_A.size();
+	int subprobNo_NA = subtaskIdx_NA.size();
+	vector<problem> sub_problems(subprobNo_A * subprobNo_NA);
+
+	cout<<"start decomposing\n";
+	/*
+	 * the whole set is divided to subprobNo parts, the last part may not
+	 * divisible by subprobNo, so it has to be processed specially
+	 */
+	int spIdx = 0;
+	for(int idx1=0;idx1<subprobNo_A;idx1++)
 	{
-		do_cross_validation();
-	}
-	else
-	{
-		model_=train(&prob, &param);
-		if(save_model(model_file_name, model_))
+		for(int idx2=0;idx2<subprobNo_NA;idx2++)
 		{
-			fprintf(stderr,"can't save model to file %s\n",model_file_name);
+			int a_len = subtaskIdx_A[idx1].size();
+			int na_len = subtaskIdx_NA[idx2].size();
+			int subtaskLen = a_len + na_len;
+			sub_problems[spIdx].l = subtaskLen;
+			sub_problems[spIdx].bias = prob.bias;
+			sub_problems[spIdx].x = new feature_node*[subtaskLen];
+			sub_problems[spIdx].y = new double[subtaskLen];
+			sub_problems[spIdx].n = prob.n;
+
+			int i=0;
+			for(i=0;i<a_len;i++)
+			{
+				int subscript = subtaskIdx_A[idx1][i];
+				
+				sub_problems[spIdx].x[i] = prob.x[subscript]; //copy of pointer
+				sub_problems[spIdx].y[i] = prob.y[subscript];
+			}
+			for(i=0;i<na_len;i++)
+			{
+				int subscript = subtaskIdx_NA[idx2][i];
+				sub_problems[spIdx].x[i+a_len] = prob.x[subscript];
+				sub_problems[spIdx].y[i+a_len] = prob.y[subscript];
+			}
+			spIdx++;
+		}
+	}	
+	
+	//train subproblem seperately
+	cout<<"start training subproblem\n";
+	clock_t start = clock(),stop,total;
+	vector<model*> sub_models(subprobNo_A*subprobNo_NA);
+	for(int i=0;i<sub_models.size();i++)
+	{
+		cout<<"training "<<i<<endl;
+		sub_models[i] = train(&sub_problems[i],&param);
+	}
+	stop = clock();
+	total = stop-start;
+	cout<<"subproblem training cost: "<<total*1./CLOCKS_PER_SEC<<"s\n\n";
+
+	/*
+	 * read test set
+	 *
+	 */
+	if(transform_test_set)
+		transformLabel(test_set_name);
+	read_problem(test_set_name);
+
+	/*
+	 * predict individually and vote
+	 *
+	 */
+	cout<<"voting start\n";
+	start = clock();
+	int nr_class = sub_models[0]->nr_class;
+	vector<vector<int>> pred_vote(subprobNo_A * subprobNo_NA);
+	for(int i=0;i<pred_vote.size();i++)
+	{
+		for(int k=0;k<prob.l;k++)
+		{			
+			double* dec_values = new double[nr_class];
+			double label = predict_values(sub_models[i],prob.x[k],dec_values);
+			if((dec_values[0] - threshold) >= 0.001 )
+				pred_vote[i].push_back(sub_models[i]->label[0]);
+			else
+				pred_vote[i].push_back(sub_models[i]->label[1]);
+			delete [] dec_values;
+			/*
+			pred_vote[i].push_back(predict(
+											sub_models[i],
+											prob.x[k]));
+			*/
+		}
+	}
+
+	stop = clock();
+	cout<<"subtasks vote cost:"<<(stop-start)*1.<<"s\n\n";
+	total += stop - start;
+
+	/*
+	 * count vote and do MIN
+	 */
+	cout<<"start MIN\n";
+	vector<vector<int>> minUnit(subprobNo_A);
+	spIdx = 0;
+	start = clock();
+	for(int idx1=0;idx1<subprobNo_A;idx1++)
+	{
+		//initialize
+		for(int k=0;k<prob.l;k++)
+			minUnit[idx1].push_back(0);
+		for(int idx2=0;idx2<subprobNo_NA;idx2++)
+		{
+			//count vote
+			for(int k=0;k<prob.l;k++)
+				minUnit[idx1][k] += pred_vote[spIdx][k];
+			spIdx++;
+		}
+		//MIN, if all predict i, the predict 1; otherwise predict 0
+		for(int k=0;k<prob.l;k++)
+			if(minUnit[idx1][k] == subprobNo_NA)
+				minUnit[idx1][k] = 1;
+			else
+				minUnit[idx1][k] = 0;
+	}
+	stop = clock();
+	total += stop - start;
+	cout<<"MIN cost: "<<(stop-start)*1./CLOCKS_PER_SEC<<"s\n\n";
+
+	/* 
+	 * do MAX, if one predict 1, then predict 1; otherwise predict 0
+	 */
+	cout<<"start MAX\n";
+	vector<int> maxUnit(prob.l,0);
+	start = clock();
+	for(int i=0;i<prob.l;i++)
+	{
+		for(auto minIter : minUnit)
+		{
+			maxUnit[i] += minIter[i];
+		}
+		if(maxUnit[i]>0)
+			maxUnit[i] = 1;
+		else
+			maxUnit[i] = 0;
+	}
+	stop = clock();
+	total += stop - start;
+	cout<<"MAX cost: "<<(stop - start)*1./CLOCKS_PER_SEC<<"s\n\n";
+
+	/*
+	 * save models
+	 */
+	char **model_file_name = new char*[subprobNo_A*subprobNo_NA];
+	for(int i=0;i<subprobNo_A*subprobNo_NA;i++)
+	{
+		model_file_name[i] = new char[30];
+		sprintf(model_file_name[i],"%s_%d",model_name,i);
+		if(save_model(model_file_name[i], sub_models[i]))
+		{
+			fprintf(stderr,"can't save model to file %s\n",model_file_name[i]);
 			exit(1);
 		}
-		free_and_destroy_model(&model_);
+		free_and_destroy_model(&sub_models[i]);
+		delete model_file_name[i];
 	}
+	delete [] model_file_name;
+
+	/*
+	 * compute F1
+	 */
+	int TP=0,FP=0,FN=0,TN=0;
+	double p,r,F1, TPR, FPR;
+	for(int i=0;i<prob.l;i++)
+	{
+
+		if(prob.y[i] == 1)
+		{
+			if(maxUnit[i] == 1) //true positive
+				TP++;
+			else
+				FP++;
+		}
+		else//negative
+		{
+			if(maxUnit[i] == 1)
+				FN++;
+			else
+				TN++;
+		}
+	}
+
+	p = 1.*TP/(TP+FP);
+	r = 1.*TP/(TP+FN);
+	F1 = 2*r*p/(r+p);
+	TPR = 1.*TP/(TP+FN);
+	FPR = 1.*FP/(FP+TN);
+	cout<<"---------------------------------------------------\n"
+		<<"total time(including train, min, max): "<<(float)total/CLOCKS_PER_SEC<<" s"<<endl
+		<<"threshold is "<<threshold<<endl
+		<<"TP = "<<TP<<"\tFP = "<<FP<<"\tFN = "<<FN<<"\tTN = "<<TN<<endl
+		<<"F1 = "<<F1<<endl
+		<<"TPR = "<<TPR<<"\tFPR = "<<FPR<<endl
+		<<"accuracy = "<<((TP+TN)*1.0/prob.l * 100)<<"%\n";
+}
+
+void priori_min_max_train(int argc, char** argv)
+{
+	char* train_set_name = new char[50];
+	//char model_file_name[1024];
+	char* test_set_name = new char[50];
+	const char *error_msg;
+
+	parse_command_line(argc, argv, train_set_name, test_set_name);
+
+	/*
+	read_problem(input_file_name);
+	error_msg = check_parameter(&prob,&param);
+	*/
+	__priori_min_max_train(train_set_name, test_set_name);
+
+	cout<<"parameters: ";
+	for(int i=1;i<argc;i++)
+		cout<<argv[i]<<' ';
+	cout<<endl<<endl;
+
 	destroy_param(&param);
+	delete train_set_name;
+	delete test_set_name;
 	free(prob.y);
 	free(prob.x);
 	free(x_space);
+	
 	free(line);
-
-	return 0;
-}
-
-void do_find_parameter_C()
-{
-	double start_C, best_C, best_rate;
-	double max_C = 1024;
-	if (flag_C_specified)
-		start_C = param.C;
-	else
-		start_C = -1.0;
-	printf("Doing parameter search with %d-fold cross validation.\n", nr_fold);
-	find_parameter_C(&prob, &param, nr_fold, start_C, max_C, &best_C, &best_rate);
-	printf("Best C = %g  CV accuracy = %g%%\n", best_C, 100.0*best_rate);
-}
-
-void do_cross_validation()
-{
-	int i;
-	int total_correct = 0;
-	double total_error = 0;
-	double sumv = 0, sumy = 0, sumvv = 0, sumyy = 0, sumvy = 0;
-	double *target = Malloc(double, prob.l);
-
-	cross_validation(&prob,&param,nr_fold,target);
-	if(param.solver_type == L2R_L2LOSS_SVR ||
-	   param.solver_type == L2R_L1LOSS_SVR_DUAL ||
-	   param.solver_type == L2R_L2LOSS_SVR_DUAL)
+	if(error_msg)
 	{
-		for(i=0;i<prob.l;i++)
+		fprintf(stderr,"ERROR: %s\n",error_msg);
+		exit(1);
+	}
+}
+
+/*
+ * liblinear cannot read the origin data set provided by Prof. so we need to transform the format of labels 
+ * of origin data set.
+ *
+ * Transform origin labels, such as A01B/03/08. If the section is A, no matter what class or subclass 
+ * or group it is in, then transform the label to 1; otherwise to 0.
+ *
+ * @param filename : the filename of data. The name of transformed file new_${filename}
+ *
+ * @return None
+ *
+ */
+char* transformLabel(char* filename)
+{
+	ifstream fin(filename);
+	char s[30];
+	sprintf(s,"new_%s",filename);
+
+	ofstream fout(filename);
+
+	string str;
+
+	getline(fin,str);
+
+	while(!fin.eof())
+	{
+		//cout<<str<<endl;
+		//string l="";
+		if(str[0]=='A')
+			fout<<1;
+		else
+			fout<<0;
+		for(int i=0;i<str.size();i++)
 		{
-			double y = prob.y[i];
-			double v = target[i];
-			total_error += (v-y)*(v-y);
-			sumv += v;
-			sumy += y;
-			sumvv += v*v;
-			sumyy += y*y;
-			sumvy += v*y;
+			char ch = str[i];
+			if(ch == ' ')
+			{
+				//label.insert(l);
+				//string rest="";
+				string rest(str,i,str.size()-i);
+				//for(string::iterator ite=ch;ite!=str.end();ite++)
+					//rest+= *ite;
+				fout<<rest<<endl;
+				break;
+			}
+			else if(ch == ',')
+			{
+				//label.insert(l);
+				//cout<<l<<endl;
+				//l="";
+			}
+			else {}
+				//l+=ch;
 		}
-		printf("Cross Validation Mean squared error = %g\n",total_error/prob.l);
-		printf("Cross Validation Squared correlation coefficient = %g\n",
-				((prob.l*sumvy-sumv*sumy)*(prob.l*sumvy-sumv*sumy))/
-				((prob.l*sumvv-sumv*sumv)*(prob.l*sumyy-sumy*sumy))
-			  );
-	}
-	else
-	{
-		for(i=0;i<prob.l;i++)
-			if(target[i] == prob.y[i])
-				++total_correct;
-		printf("Cross Validation Accuracy = %g%%\n",100.0*total_correct/prob.l);
+		//getline(fin,str,100000,' ');
+		getline(fin,str);
 	}
 
-	free(target);
+	fin.close();
+	fout.close();
+
+	return s;
 }
 
 //void parse_command_line(int argc, char **argv, char *input_file_name, char *model_file_name)
@@ -250,6 +452,20 @@ void parse_command_line(int argc, char **argv, char *input_file_name, char *test
 
 			case 'C':
 				flag_find_C = 1;
+				i--;
+				break;
+
+			case 't':
+				threshold = atof(argv[i]);
+				break;
+
+			case 'f':
+				transform_train_set = true;
+				i--;
+				break;
+
+			case 'F':
+				transform_test_set = true;
 				i--;
 				break;
 
@@ -429,227 +645,133 @@ void read_problem(const char *filename)
 	fclose(fp);
 }
 
-/* 
- * generate random sequence from 0 to range-1, without repitiion, covering all
- * numbers from 0 to range-1
- */
-vector<int> genRandomIndex(unsigned int range)
+void exit_input_error(int line_num)
 {
-	vector<int> res;
-	vector<bool> exist(range,false);
-	while(res.size()<range)
-	{
-		int t = rand()%range;
-		if(!exist[t])
-		{
-			res.push_back(t);
-			exist[t] = true;
-		}		
-	}
-	return res;
+	fprintf(stderr,"Wrong input format at line %d\n", line_num);
+	exit(1);
 }
 
-/*
- * decompose origin training set into 6 groups, 3 A, 3 not A
- * thus totally 9 subproblems
- */
-void __min_max_train(char* test_file_name)
+void print_null(const char *s) {}
+
+void exit_with_help()
 {
-	const int subprobNo = 3;
-	//decompose
-	cout<<"start decomposing\n";
-		srand(time(NULL));
-
-	//find which are A, which are not A
-	vector<int> groupA;
-	vector<int> groupNotA;
-	for(int i=0;i<prob.l;i++)
-	{
-		if(prob.y[i] == 1)
-			groupA.push_back(i);
-		else
-			groupNotA.push_back(i);
-	}
-
-	//generate random sequence to split origin problem
-	vector<int> randomIdxOfA = genRandomIndex(groupA.size());
-	vector<int> randomIdxOfNA = genRandomIndex(groupNotA.size());
-
-	//
-	vector<problem> sub_problems(subprobNo*subprobNo);
-
-	int spIdx = 0;
-	int l = prob.l/subprobNo;
-	for(int idxA=0;idxA<subprobNo;idxA++)
-	{
-		for(int idxNA=0;idxNA<subprobNo;idxNA++)
-		{
-			sub_problems[spIdx].l = l;
-			sub_problems[spIdx].bias = -1;
-			sub_problems[spIdx].x = new feature_node*[l];
-			sub_problems[spIdx].y = new double[l];
-
-			int sa = groupA.size()/subprobNo;
-			int i=0;
-
-			//copy 1/3 groupA and groupNA to sub_problems[spIdx] in each loop
-			for(i=0;i<sa;i++)
-			{
-				int subscript = groupA[randomIdxOfA[i+idxA*sa]];
-				sub_problems[spIdx].x[i] = prob.x[subscript]; //copy of pointer
-				sub_problems[spIdx].y[i] = prob.y[subscript];
-			}
-			int sna = groupNotA.size()/subprobNo;
-			for(;i<l;i++)
-			{
-				int subscript = groupNotA[randomIdxOfNA[i-sa+idxNA*sna]];
-				sub_problems[spIdx].x[i] = prob.x[subscript];
-				sub_problems[spIdx].y[i] = prob.y[subscript];
-			}
-			spIdx++;
-		}
-	}
-	
-	//train subproblem seperately
-	cout<<"start training subproblem\n";
-	clock_t start = clock(),stop,total;
-	vector<model*> sub_models(subprobNo*subprobNo);
-	for(int i=0;i<subprobNo*subprobNo;i++)
-	{
-		sub_models[i] = train(&sub_problems[i],&param);
-	}
-	stop = clock();
-	total = stop-start;
-	cout<<"subproblem training cost: "<<total<<endl<<endl;
-
-	// read test set
-	read_problem(test_file_name);
-
-	/*
-	 * min prodecure of min-max, predict individually and vote
-	 */
-	cout<<"voting start\n";
-	start = clock();
-	vector<vector<int>> pred_vote(subprobNo*subprobNo);
-	for(int i=0;i<subprobNo*subprobNo;i++)
-		for(int k=0;k<prob.l;k++)
-			pred_vote[i].push_back(predict(
-											sub_models[i],
-											prob.x[k]));
-	stop = clock();
-	total += stop - start;
-
-	/*
-	 * count vote and do MIN
-	 */
-	cout<<"start MIN\n";
-	vector<vector<int>> after_min(subprobNo);
-	spIdx = 0;
-	start = clock();
-	for(int idxA=0;idxA<subprobNo;idxA++)
-	{
-		//initialize
-		for(int k=0;k<prob.l;k++)
-			after_min[idxA].push_back(0);
-		for(int idxNA=0;idxNA<subprobNo;idxNA++)
-		{
-			//count vote
-			for(int k=0;k<prob.l;k++)
-				after_min[idxA][k] += pred_vote[spIdx][k];
-			spIdx++;
-		}
-		//MIN, if all predict i, the predict 1; otherwise predict 0
-		for(int k=0;k<prob.l;k++)
-			if(after_min[idxA][k] == subprobNo)
-				after_min[idxA][k] = 1;
-			else
-				after_min[idxA][k] = 0;
-	}
-	stop = clock();
-	total += stop - start;
-	cout<<"MIN cost: "<<(stop-start)<<endl<<endl;
-
-	/* 
-	 * do MAX, if one predict 1, then predict 1; otherwise predict 0
-	 */
-	cout<<"start MAX\n";
-	vector<int> after_max(prob.l,0);
-	start = clock();
-	for(int i=0;i<prob.l;i++)
-	{
-		for(auto minIter : after_min)
-		{
-			after_max[i] += minIter[i];
-		}
-		if(after_max[i]>0)
-			after_max[i] = 1;
-		else
-			after_max[i] = 0;
-	}
-	stop = clock();
-	total += stop - start;
-	cout<<"MAX cost: "<<(stop - start)<<endl<<endl;
-
-
-	/*
-	 * compute accuracy
-	 */
-	int cnt=0;
-	for(int i=0;i<prob.l;i++)
-	
-		if(after_max[i]==prob.y[i]) cnt++;
-	cout<<"total time: "<<(float)total/CLOCKS_PER_SEC<<'s'<<endl;
-	cout<<"accuracy = "<<(cnt*1.0/prob.l * 100)<<"\%\n";
+    printf(
+    "Usage: train [options] training_set_file [model_file]\n"
+    "options:\n"
+    "-s type : set type of solver (default 1)\n"
+    "  for multi-class classification\n"
+    "    0 -- L2-regularized logistic regression (primal)\n"
+    "    1 -- L2-regularized L2-loss support vector classification (dual)\n"
+    "    2 -- L2-regularized L2-loss support vector classification (primal)\n"
+    "    3 -- L2-regularized L1-loss support vector classification (dual)\n"
+    "    4 -- support vector classification by Crammer and Singer\n"
+    "    5 -- L1-regularized L2-loss support vector classification\n"
+    "    6 -- L1-regularized logistic regression\n"
+    "    7 -- L2-regularized logistic regression (dual)\n"
+    "  for regression\n"
+    "   11 -- L2-regularized L2-loss support vector regression (primal)\n"
+    "   12 -- L2-regularized L2-loss support vector regression (dual)\n"
+    "   13 -- L2-regularized L1-loss support vector regression (dual)\n"
+    "-c cost : set the parameter C (default 1)\n"
+    "-p epsilon : set the epsilon in loss function of SVR (default 0.1)\n"
+    "-e epsilon : set tolerance of termination criterion\n"
+    "   -s 0 and 2\n"
+    "       |f'(w)|_2 <= eps*min(pos,neg)/l*|f'(w0)|_2,\n"
+    "       where f is the primal function and pos/neg are # of\n"
+    "       positive/negative data (default 0.01)\n"
+    "   -s 11\n"
+    "       |f'(w)|_2 <= eps*|f'(w0)|_2 (default 0.001)\n"
+    "   -s 1, 3, 4, and 7\n"
+    "       Dual maximal violation <= eps; similar to libsvm (default 0.1)\n"
+    "   -s 5 and 6\n"
+    "       |f'(w)|_1 <= eps*min(pos,neg)/l*|f'(w0)|_1,\n"
+    "       where f is the primal function (default 0.01)\n"
+    "   -s 12 and 13\n"
+    "       |f'(alpha)|_1 <= eps |f'(alpha0)|,\n"
+    "       where f is the dual function (default 0.1)\n"
+    "-B bias : if bias >= 0, instance x becomes [x; bias]; if < 0, no bias term added (default -1)\n"
+    "-wi weight: weights adjust the parameter C of different classes (see README for details)\n"
+    "-v n: n-fold cross validation mode\n"
+    "-C : find parameter C (only for -s 0 and 2)\n"
+    "-q : quiet mode (no outputs)\n"
+    "-t : threshold\n"
+    "-n : subproblem number of label A\n"
+    "-N : subproblem number of label other than A\n"
+    "-f : enable transforming labels of train set\n"
+    "-F : enable transforming labels of test set\n"
+    );
+    exit(1);
 }
 
-void min_max_train(int argc, char** argv)
+static char* readline(FILE *input)
 {
-	char input_file_name[1024];
-	//char model_file_name[1024];
-	char test_file_name[1024];
-	const char *error_msg;
+    int len;
 
-	parse_command_line(argc, argv, input_file_name, test_file_name);
-	read_problem(input_file_name);
-	error_msg = check_parameter(&prob,&param);
+    if(fgets(line,max_line_len,input) == NULL)
+        return NULL;
 
-	__min_max_train(test_file_name);
+    while(strrchr(line,'\n') == NULL)
+    {
+        max_line_len *= 2;
+        line = (char *) realloc(line,max_line_len);
+        len = (int) strlen(line);
+        if(fgets(line+len,max_line_len-len,input) == NULL)
+            break;
+    }
+    return line;
+}
 
-	destroy_param(&param);
-	free(prob.y);
-	free(prob.x);
-	free(x_space);
-	
-	if(error_msg)
+void do_find_parameter_C()
+{
+	double start_C, best_C, best_rate;
+	double max_C = 1024;
+	if (flag_C_specified)
+		start_C = param.C;
+	else
+		start_C = -1.0;
+	printf("Doing parameter search with %d-fold cross validation.\n", nr_fold);
+	find_parameter_C(&prob, &param, nr_fold, start_C, max_C, &best_C, &best_rate);
+	printf("Best C = %g  CV accuracy = %g%%\n", best_C, 100.0*best_rate);
+}
+
+void do_cross_validation()
+{
+	int i;
+	int total_correct = 0;
+	double total_error = 0;
+	double sumv = 0, sumy = 0, sumvv = 0, sumyy = 0, sumvy = 0;
+	double *target = Malloc(double, prob.l);
+
+	cross_validation(&prob,&param,nr_fold,target);
+	if(param.solver_type == L2R_L2LOSS_SVR ||
+	   param.solver_type == L2R_L1LOSS_SVR_DUAL ||
+	   param.solver_type == L2R_L2LOSS_SVR_DUAL)
 	{
-		fprintf(stderr,"ERROR: %s\n",error_msg);
-		exit(1);
-	}
-	
-	/*
-	if (flag_find_C)
-	{
-		do_find_parameter_C();
-	}
-	else if(flag_cross_validation)
-	{
-		do_cross_validation();
+		for(i=0;i<prob.l;i++)
+		{
+			double y = prob.y[i];
+			double v = target[i];
+			total_error += (v-y)*(v-y);
+			sumv += v;
+			sumy += y;
+			sumvv += v*v;
+			sumyy += y*y;
+			sumvy += v*y;
+		}
+		printf("Cross Validation Mean squared error = %g\n",total_error/prob.l);
+		printf("Cross Validation Squared correlation coefficient = %g\n",
+				((prob.l*sumvy-sumv*sumy)*(prob.l*sumvy-sumv*sumy))/
+				((prob.l*sumvv-sumv*sumv)*(prob.l*sumyy-sumy*sumy))
+			  );
 	}
 	else
 	{
-		model_=train(&prob, &param);
-		if(save_model(model_file_name, model_))
-		{
-			fprintf(stderr,"can't save model to file %s\n",model_file_name);
-			exit(1);
-		}
-		free_and_destroy_model(&model_);
+		for(i=0;i<prob.l;i++)
+			if(target[i] == prob.y[i])
+				++total_correct;
+		printf("Cross Validation Accuracy = %g%%\n",100.0*total_correct/prob.l);
 	}
-	free(line);
-*/
+
+	free(target);
 }
 
-int main(int argc, char** argv)
-{
-	min_max_train(argc,argv);
-}
