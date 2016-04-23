@@ -167,7 +167,7 @@ void __priori_min_max_train(char* train_set_name, char* test_set_name)
 	}
 
 	stop = clock();
-	cout<<"subtasks vote cost:"<<(stop-start)*1.<<"s\n\n";
+	cout<<"subtasks vote cost:"<<(stop-start)*1./CLOCKS_PER_SEC<<"s\n\n";
 	total += stop - start;
 
 	/*
