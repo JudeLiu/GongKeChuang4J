@@ -10,7 +10,7 @@ const char* model_name = "model/random_minmax";
 bool transform_train_set = false;
 bool transform_test_set = false;
 int subprobNo_A = 2;
-int subprobNo_NA = 4;
+int subprobNo_NA = 3;
 
 int main(int argc, char** argv)
 {
@@ -22,7 +22,7 @@ int main(int argc, char** argv)
 /*
  * decompose origin training set into subprobNo_A*subprobNo_NA groups,
  */
-void __min_max_train(char* test_file_name)
+void __min_max_train(char* test_set_name)
 {
 	srand(time(NULL));
 
@@ -128,8 +128,8 @@ void __min_max_train(char* test_file_name)
 	 *
 	 */
 	if(transform_test_set)
-		transformLabel(test_file_name);
-	read_problem(test_file_name);
+		transformLabel(test_set_name);
+	read_problem(test_set_name);
 
 	/*
 	 * predict individually and vote
@@ -270,37 +270,39 @@ void __min_max_train(char* test_file_name)
 
 void min_max_train(int argc, char** argv)
 {
-	char input_file_name[1024];
+	char* train_set_name = new char[1024];
 	//char model_file_name[1024];
-	char test_file_name[1024];
+	char* test_set_name = new char[1024];
 	const char *error_msg;
 
-	parse_command_line(argc, argv, input_file_name, test_file_name);
+	parse_command_line(argc, argv, train_set_name, test_set_name);
 
 	//cout<<"transforming data format\n";
 	if(transform_train_set)
-		transformLabel(input_file_name);
+		train_set_name = transformLabel(train_set_name);
 
-	read_problem(input_file_name);
-	error_msg = check_parameter(&prob,&param);
+	read_problem(train_set_name);
 
-	__min_max_train(test_file_name);
+	if(error_msg = check_parameter(&prob,&param))
+	{
+		fprintf(stderr,"ERROR: %s\n",error_msg);
+		exit(1);
+	}
+
+	__min_max_train(test_set_name);
 
 	cout<<"parameters: ";
 	for(int i=1;i<argc;i++)
 		cout<<argv[i]<<' ';
 	cout<<endl<<endl;
-	destroy_param(&param);
+
+	destroy_param(&param);	
+	delete train_set_name;
+	delete test_set_name;
 	free(prob.y);
 	free(prob.x);
-	free(x_space);
-	
+	free(x_space);	
 	free(line);
-	if(error_msg)
-	{
-		fprintf(stderr,"ERROR: %s\n",error_msg);
-		exit(1);
-	}
 }
 
 /*
@@ -315,13 +317,11 @@ void min_max_train(int argc, char** argv)
  * @return None
  *
  */
-void transformLabel(char* filename)
+char* transformLabel(char* filename)
 {
 	ifstream fin(filename);
-	char *s = new char[1024];
-	s = strdup(filename);
-	sprintf(filename,"new_%s",s);
-	delete [] s;
+	char s[30];
+	sprintf(s,"new_%s",filename);
 
 	ofstream fout(filename);
 
@@ -365,10 +365,12 @@ void transformLabel(char* filename)
 
 	fin.close();
 	fout.close();
+
+	return s;
 }
 
-//void parse_command_line(int argc, char **argv, char *input_file_name, char *model_file_name)
-void parse_command_line(int argc, char **argv, char *input_file_name, char *test_file_name)
+//void parse_command_line(int argc, char **argv, char *train_set_name, char *model_file_name)
+void parse_command_line(int argc, char **argv, char *train_set_name, char *test_set_name)
 {
 	int i;
 	void (*print_func)(const char*) = NULL;	// default printing to stdout
@@ -482,11 +484,11 @@ void parse_command_line(int argc, char **argv, char *input_file_name, char *test
 	if(i>=argc)
 		exit_with_help();
 
-	strcpy(input_file_name, argv[i]);
+	strcpy(train_set_name, argv[i]);
 
 	if(i<argc-1)
 		//strcpy(model_file_name,argv[i+1]);
-		strcpy(test_file_name,argv[i+1]);
+		strcpy(test_set_name,argv[i+1]);
 	else
 	{
 		char *p = strrchr(argv[i],'/');
@@ -494,7 +496,7 @@ void parse_command_line(int argc, char **argv, char *input_file_name, char *test
 			p = argv[i];
 		else
 			++p;
-		sprintf(test_file_name,"%s.model",p);
+		sprintf(test_set_name,"%s.model",p);
 	}
 
 	// default solver for parameter selection is L2R_L2LOSS_SVC
