@@ -16,6 +16,12 @@ char train_type;
 
 int main(int argc, char** argv)
 {
+    if(argc == 1)
+    {
+        exit_with_help();
+        exit(-1);
+    }
+
     srand((u_int)time(NULL));
     switch (argv[1][0])
     {
@@ -38,6 +44,7 @@ int main(int argc, char** argv)
         exit_with_help();
         break;
     }
+    
     return 0;
 }
 
@@ -336,7 +343,6 @@ void min_max_train(int argc, char** argv)
     cout << endl << endl;
 
     destroy_param(&param);
-    delete[] test_set_name;
     free(prob.y);
     free(prob.x);
     free(x_space);
@@ -369,7 +375,6 @@ void __priori_min_max_train(char* train_set_name, char* test_set_name)
         transformed_train_set_name = transformLabel(train_set_name);
     else
         transformed_train_set_name = changeFileName(train_set_name);
-    delete[] train_set_name; //priori::train_set_name delete here
     read_problem(transformed_train_set_name.c_str());
 
     error_msg = check_parameter(&prob, &param);
@@ -385,6 +390,13 @@ void __priori_min_max_train(char* train_set_name, char* test_set_name)
     * we will save "A01" to the map idxA
     */
     ifstream fin(train_set_name);
+    if(!fin)
+    {
+        cerr<<"ERROR: cannot open "<<train_set_name<<endl;
+        exit(1);
+    }
+    delete[] train_set_name; //priori::train_set_name delete here
+
     unordered_map<string, vector<int>> idxA;
     unordered_map<string, vector<int>> idxNA;
     string line;
@@ -629,8 +641,6 @@ void priori_min_max_train(int argc, char** argv)
     cout << endl << endl;
 
     destroy_param(&param);
-    delete train_set_name;
-    delete test_set_name;
     free(prob.y);
     free(prob.x);
     free(x_space);
