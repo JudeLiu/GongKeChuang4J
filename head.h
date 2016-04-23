@@ -13,6 +13,7 @@
 #include <ctype.h>
 #include <vector>
 #include <set>
+#include <unordered_map>
 #include <iostream>
 #include <errno.h>
 
@@ -21,7 +22,7 @@
 
 typedef long unsigned int size_type;
 
-void transformLabel(char*);
+char* transformLabel(char*);
 void parse_command_line(int, char **, char *input_file_name, char *model_file_name);
 void read_problem(const char *filename);
 void print_null(const char *s);
@@ -30,13 +31,14 @@ static char* readline(FILE *input);
 void do_cross_validation();
 void do_find_parameter_C();
 void exit_input_error(int line_num);
+void priori_min_max_train(int, char**);
+void __priori_min_max_train(char*);
 void min_max_train(int argc, char** argv);
 void __min_max_train(char* test_file_name);
 
 struct feature_node *x_space;
 struct parameter param={};
 struct problem prob={};
-struct model* model_;
 int flag_cross_validation;
 int flag_find_C;
 int flag_C_specified;
