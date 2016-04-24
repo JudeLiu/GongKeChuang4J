@@ -52,15 +52,17 @@ int main(int argc, char** argv)
 }
 
 /*
-* decompose origin training set into subprobNo_A*subprobNo_NA groups,
-*/
+ * decompose origin training set into subprobNo_A*subprobNo_NA groups,
+ */
 void __min_max_train(char* test_set_name)
 {
+	cout << "start decomposing\n";
+	clock_t start = clock(), stop, total;
 	/*
-	* decompose orgin problem into two group
-	* vector idxA contains the indices of data with label A
-	* vector idxNA contains the indices of data with label other than A
-	*/
+	 * decompose orgin problem into two group
+	 * vector idxA contains the indices of data with label A
+	 * vector idxNA contains the indices of data with label other than A
+	 */
 	vector<int> idxA;
 	vector<int> idxNA;
 	for (int i = 0; i<prob.l; i++)
@@ -77,11 +79,11 @@ void __min_max_train(char* test_set_name)
 	u_int sublenNA = idxNA.size() / subprobNo_NA;
 
 	/*
-	* divide A into subprobNo_A parts, and divide NA into subprobNA parts
-	*
-	* NOTICE that, i.e. idxA.size()/subprobA may have remainder
-	* so the last part has to be processed specially
-	*/
+	 * divide A into subprobNo_A parts, and divide NA into subprobNA parts
+	 *
+	 * NOTICE that, i.e. idxA.size()/subprobA may have remainder
+	 * so the last part has to be processed specially
+	 */
 	vector<vector<int>> subtaskIdx_A(subprobNo_A);
 	vector<vector<int>> subtaskIdx_NA(subprobNo_NA);
 	for (u_int i = 0; i < subprobNo_A - 1; i++)
@@ -102,11 +104,10 @@ void __min_max_train(char* test_set_name)
 
 	vector<problem> sub_problems(subprobNo_A*subprobNo_NA);
 
-	cout << "start decomposing\n";
 	/*
-	* the whole set is divided to subprobNo parts, the last part may not
-	* divisible by subprobNo, so it has to be processed specially
-	*/
+	 * the whole set is divided to subprobNo parts, the last part may not
+	 * divisible by subprobNo, so it has to be processed specially
+	 */
 	int spIdx = 0;
 	for (u_int idx1 = 0; idx1<subprobNo_A; idx1++)
 	{
@@ -138,26 +139,29 @@ void __min_max_train(char* test_set_name)
 			spIdx++;
 		}
 	}
+	stop = clock();
+	total = stop - start;
+	cout << "task decomposting cost:" << (stop - start)*1. / CLOCKS_PER_SEC << "s\n\n";
 
 	//train subproblem seperately
 	cout << "start training subproblem\n";
-	clock_t start = clock(), stop, total;
+	start = clock();
 	vector<model*> sub_models(subprobNo_A*subprobNo_NA);
-	int i;
+
 #pragma omp parallel for
-	for (i = 0; i<sub_models.size(); i++)
+	for (int i = 0; i<sub_models.size(); i++)
 	{
-		cout << "training " << i << endl;
+		//cout << "training " << i << endl;
 		sub_models[i] = train(&sub_problems[i], &param);
 	}
 	stop = clock();
-	total = stop - start;
-	cout << "subproblem training cost: " << total*1. / CLOCKS_PER_SEC << " s\n\n";
+	total += stop - start;
+	cout << "subproblem training cost: " << (stop-start)*1. / CLOCKS_PER_SEC << " s\n\n";
 
 	/*
-	* read test set
-	*
-	*/
+	 * read test set
+	 *
+	 */
 	string transformed_test_set_name;
 	if (transform_test_set)
 		transformed_test_set_name = transformLabel(test_set_name);
@@ -167,9 +171,9 @@ void __min_max_train(char* test_set_name)
 	read_problem(transformed_test_set_name.c_str());
 
 	/*
-	* predict individually and vote
-	*
-	*/
+	 * predict individually and vote
+	 *
+	 */
 	cout << "voting start\n";
 	start = clock();
 	int nr_class = sub_models[0]->nr_class;
@@ -194,10 +198,11 @@ void __min_max_train(char* test_set_name)
 	delete[] dec_values;
 	stop = clock();
 	total += stop - start;
+	cout << "vote cost: " << (stop - start)*1. / CLOCKS_PER_SEC << "s\n\n";
 
 	/*
-	* count vote and do MIN
-	*/
+	 * count vote and do MIN
+	 */
 	cout << "start MIN\n";
 	vector<vector<int>> minUnit(subprobNo_A);
 	spIdx = 0;
@@ -226,11 +231,12 @@ void __min_max_train(char* test_set_name)
 	cout << "MIN cost: " << (stop - start)*1. / CLOCKS_PER_SEC << " s\n\n";
 
 	/*
-	* do MAX, if one predict 1, then predict 1; otherwise predict 0
-	*/
+	 * do MAX, if one predict 1, then predict 1; otherwise predict 0
+	 */
 	cout << "start MAX\n";
 	vector<int> maxUnit(prob.l, 0);
 	start = clock();
+#pragma omp parallel for
 	for (int i = 0; i<prob.l; i++)
 	{
 		for (auto minIter : minUnit)
@@ -247,8 +253,8 @@ void __min_max_train(char* test_set_name)
 	cout << "MAX cost: " << (stop - start)*1. / CLOCKS_PER_SEC << " s\n\n";
 
 	/*
-	* save models
-	*/
+	 * save models
+	 */
 	char **model_file_name = new char*[subprobNo_A*subprobNo_NA];
 	for (u_int i = 0; i<subprobNo_A*subprobNo_NA; i++)
 	{
@@ -265,8 +271,8 @@ void __min_max_train(char* test_set_name)
 	delete[] model_file_name;
 
 	/*
-	* compute F1
-	*/
+	 * compute F1
+	 */
 	int TP = 0, FP = 0, FN = 0, TN = 0;
 	double p, r, F1, TPR, FPR;
 	for (int i = 0; i<prob.l; i++)
@@ -311,19 +317,19 @@ void min_max_train(int argc, char** argv)
 	parse_command_line(argc, argv, train_set_name, test_set_name);
 
 	/*
-	* parse the path of training set and test set to get the name of transformed file
-	* for example, the path of training set is /path/to/the/training_set.txt
-	* then transformed_train_set_name will be /path/to/the/new_training_set.txt,
-	*
-	* If transform_train_set or transform_test_set is enabled(default disabled),
-	* it will read the original training set or test set, and transform the labels,
-	* for example, change AXXX/XX/XX to 1, otherwise to 0
-	*
-	* The reason why doing this is because that liblinear cannot read the original
-	* data format privided by Prof., so before calling read_problem() we have to change
-	* the data format.
-	*
-	*/
+	 * parse the path of training set and test set to get the name of transformed file
+	 * for example, the path of training set is /path/to/the/training_set.txt
+	 * then transformed_train_set_name will be /path/to/the/new_training_set.txt,
+	 *
+	 * If transform_train_set or transform_test_set is enabled(default disabled),
+	 * it will read the original training set or test set, and transform the labels,
+	 * for example, change AXXX/XX/XX to 1, otherwise to 0
+	 *
+	 * The reason why doing this is because that liblinear cannot read the original
+	 * data format privided by Prof., so before calling read_problem() we have to change
+	 * the data format.
+	 *
+	 */
 	string transformed_train_set_name;
 	if (transform_train_set)
 		transformed_train_set_name = transformLabel(train_set_name);
@@ -354,8 +360,8 @@ void min_max_train(int argc, char** argv)
 }
 
 /*
-* decompose origin training set into subprobNo_A*subprobNo_NA groups,
-*/
+ * decompose origin training set into subprobNo_A*subprobNo_NA groups,
+ */
 void __priori_min_max_train(char* train_set_name, char* test_set_name)
 {
 	const char* error_msg;
@@ -389,10 +395,10 @@ void __priori_min_max_train(char* train_set_name, char* test_set_name)
 	}
 
 	/*
-	* save class in order to use this priori knowledge,
-	* for example, given the origin label A01B/33/12,A01B/9/00,A01B/39/18  1:0.2323 ....
-	* we will save "A01" to the map idxA
-	*/
+	 * save class in order to use this priori knowledge,
+	 * for example, given the origin label A01B/33/12,A01B/9/00,A01B/39/18  1:0.2323 ....
+	 * we will save "A01" to the map idxA
+	 */
 	ifstream fin(train_set_name);
 	if (!fin)
 	{
@@ -400,7 +406,9 @@ void __priori_min_max_train(char* train_set_name, char* test_set_name)
 		exit(1);
 	}
 	delete[] train_set_name; //priori::train_set_name delete here
-
+	
+	cout << "start task decomposing\n";
+	clock_t start = clock();
 	unordered_map<string, vector<int>> idxA;
 	unordered_map<string, vector<int>> idxNA;
 	string line;
@@ -430,12 +438,10 @@ void __priori_min_max_train(char* train_set_name, char* test_set_name)
 	int subprobNo_A = subtaskIdx_A.size();
 	int subprobNo_NA = subtaskIdx_NA.size();
 	vector<problem> sub_problems(subprobNo_A * subprobNo_NA);
-
-	cout << "start decomposing\n";
 	/*
-	* the whole set is divided to subprobNo parts, the last part may not
-	* divisible by subprobNo, so it has to be processed specially
-	*/
+	 * the whole set is divided to subprobNo parts, the last part may not
+	 * divisible by subprobNo, so it has to be processed specially
+	 */
 	int spIdx = 0;
 	for (int idx1 = 0; idx1<subprobNo_A; idx1++)
 	{
@@ -467,24 +473,28 @@ void __priori_min_max_train(char* train_set_name, char* test_set_name)
 			spIdx++;
 		}
 	}
+	clock_t stop = clock(), total = stop - start;
+	cout << "task decomposting cost " << total*1. / CLOCKS_PER_SEC << " s\n\n";
 
 	//train subproblem seperately
 	cout << "start training subproblem\n";
-	clock_t start = clock(), stop, total;
+	start = clock();
 	vector<model*> sub_models(subprobNo_A*subprobNo_NA);
-	for (u_int i = 0; i<sub_models.size(); i++)
+
+#pragma omp parallel for schedule(dynamic)
+	for (int i = 0; i<sub_models.size(); i++)
 	{
-		cout << "training " << i << endl;
+		//cout << "training " << i << endl;
 		sub_models[i] = train(&sub_problems[i], &param);
 	}
 	stop = clock();
-	total = stop - start;
-	cout << "subproblem training cost: " << total*1. / CLOCKS_PER_SEC << "s\n\n";
+	total += stop - start;
+	cout << "subproblem training cost: " << (stop-start)*1. / CLOCKS_PER_SEC << "s\n\n";
 
 	/*
-	* read test set
-	*
-	*/
+	 * read test set
+	 *
+	 */
 	string transformed_test_set_name;
 	if (transform_test_set)
 		transformed_test_set_name = transformLabel(test_set_name);
@@ -494,23 +504,26 @@ void __priori_min_max_train(char* train_set_name, char* test_set_name)
 	read_problem(transformed_test_set_name.c_str());
 
 	/*
-	* predict individually and vote
-	*
-	*/
+	 * predict individually and vote
+	 *
+	 */
 	cout << "voting start\n";
 	start = clock();
 	int nr_class = sub_models[0]->nr_class;
 	vector<vector<int>> pred_vote(subprobNo_A * subprobNo_NA);
 	double* dec_values = new double[nr_class];
-	for (u_int i = 0; i<pred_vote.size(); i++)
+
+//#pragma omp parallel for
+	for (int i = 0; i < pred_vote.size(); i++)
 	{
-		for (int k = 0; k<prob.l; k++)
+		pred_vote[i] = vector<int>(prob.l, 0);
+		for (int k = 0; k < prob.l; k++)
 		{
 			double label = predict_values(sub_models[i], prob.x[k], dec_values);
 			if ((dec_values[0] - threshold) >= 0.001)
-				pred_vote[i].push_back(sub_models[i]->label[0]);
+				pred_vote[i][k] = sub_models[i]->label[0];
 			else
-				pred_vote[i].push_back(sub_models[i]->label[1]);
+				pred_vote[i][k] = sub_models[i]->label[1];
 			/*
 			pred_vote[i].push_back(predict(
 			sub_models[i],
@@ -518,23 +531,24 @@ void __priori_min_max_train(char* train_set_name, char* test_set_name)
 			*/
 		}
 	}
+	
 	delete[] dec_values;
 	stop = clock();
 	cout << "subtasks vote cost:" << (stop - start)*1. / CLOCKS_PER_SEC << "s\n\n";
 	total += stop - start;
 
 	/*
-	* count vote and do MIN
-	*/
+	 * count vote and do MIN
+	 */
 	cout << "start MIN\n";
 	vector<vector<int>> minUnit(subprobNo_A);
 	spIdx = 0;
 	start = clock();
+	for (int k = 0; k < minUnit.size(); k++)
+		minUnit[k] = vector<int>(prob.l, 0);
+
 	for (int idx1 = 0; idx1<subprobNo_A; idx1++)
 	{
-		//initialize
-		for (int k = 0; k<prob.l; k++)
-			minUnit[idx1].push_back(0);
 		for (int idx2 = 0; idx2<subprobNo_NA; idx2++)
 		{
 			//count vote
@@ -542,23 +556,32 @@ void __priori_min_max_train(char* train_set_name, char* test_set_name)
 				minUnit[idx1][k] += pred_vote[spIdx][k];
 			spIdx++;
 		}
-		//MIN, if all predict i, the predict 1; otherwise predict 0
-		for (int k = 0; k<prob.l; k++)
+	}
+
+	//MIN, if all predict i, the predict 1; otherwise predict 0
+	for (int idx1 = 0; idx1 < subprobNo_A; idx1++)
+	{
+#pragma omp parallel for
+		for (int k = 0; k < prob.l; k++)
+		{
 			if (minUnit[idx1][k] == subprobNo_NA)
 				minUnit[idx1][k] = 1;
 			else
 				minUnit[idx1][k] = 0;
+		}
 	}
 	stop = clock();
 	total += stop - start;
 	cout << "MIN cost: " << (stop - start)*1. / CLOCKS_PER_SEC << "s\n\n";
 
 	/*
-	* do MAX, if one predict 1, then predict 1; otherwise predict 0
-	*/
+	 * do MAX, if one predict 1, then predict 1; otherwise predict 0
+	 */
 	cout << "start MAX\n";
 	vector<int> maxUnit(prob.l, 0);
 	start = clock();
+
+#pragma omp parallel for
 	for (int i = 0; i<prob.l; i++)
 	{
 		for (auto minIter : minUnit)
@@ -575,8 +598,8 @@ void __priori_min_max_train(char* train_set_name, char* test_set_name)
 	cout << "MAX cost: " << (stop - start)*1. / CLOCKS_PER_SEC << "s\n\n";
 
 	/*
-	* save models
-	*/
+	 * save models
+	 */
 	char **model_file_name = new char*[subprobNo_A*subprobNo_NA];
 	for (int i = 0; i<subprobNo_A*subprobNo_NA; i++)
 	{
@@ -593,8 +616,8 @@ void __priori_min_max_train(char* train_set_name, char* test_set_name)
 	delete[] model_file_name;
 
 	/*
-	* compute F1
-	*/
+	 * compute F1
+	 */
 	int TP = 0, FP = 0, FN = 0, TN = 0;
 	double p, r, F1, TPR, FPR;
 	for (int i = 0; i<prob.l; i++)
@@ -654,8 +677,8 @@ void priori_min_max_train(int argc, char** argv)
 void __naive_train(char *test_set_name)
 {
 	/*
-	* simply using liblinear functions to train the model
-	*/
+	 * simply using liblinear functions to train the model
+	 */
 	clock_t total, start = clock();
 	model* model_ = train(&prob, &param);
 	clock_t end = clock();
@@ -669,8 +692,8 @@ void __naive_train(char *test_set_name)
 	}
 
 	/*
-	* simply using liblinear functions to predict
-	*/
+	 * simply using liblinear functions to predict
+	 */
 	string transformed_test_set_name;
 	if (transform_test_set)
 		transformed_test_set_name = transformLabel(test_set_name);
@@ -701,9 +724,9 @@ void __naive_train(char *test_set_name)
 
 	free_and_destroy_model(&model_);
 	/*
-	* compute F1
-	*/
-	int TP = 0, FP = 0, FN = 0, TN = 0;
+	 * compute F1
+	 */
+	it TP = 0, FP = 0, FN = 0, TN = 0;
 	double p, r, F1, TPR, FPR;
 	for (int i = 0; i<prob.l; i++)
 	{
@@ -747,19 +770,19 @@ void naive_train(int argc, char **argv)
 	parse_command_line(argc, argv, train_set_name, test_set_name);
 
 	/*
-	* parse the path of training set and test set to get the name of transformed file
-	* for example, the path of training set is /path/to/the/training_set.txt
-	* then transformed_train_set_name will be /path/to/the/new_training_set.txt,
-	*
-	* If transform_train_set or transform_test_set is enabled(default disabled),
-	* it will read the original training set or test set, and transform the labels,
-	* for example, change AXXX/XX/XX to 1, otherwise to 0
-	*
-	* The reason why doing this is because that liblinear cannot read the original
-	* data format privided by Prof., so before calling read_problem() we have to change
-	* the data format.
-	*
-	*/
+	 * parse the path of training set and test set to get the name of transformed file
+	 * for example, the path of training set is /path/to/the/training_set.txt
+	 * then transformed_train_set_name will be /path/to/the/new_training_set.txt,
+	 *
+	 * If transform_train_set or transform_test_set is enabled(default disabled),
+	 * it will read the original training set or test set, and transform the labels,
+	 * for example, change AXXX/XX/XX to 1, otherwise to 0
+	 *
+	 * The reason why doing this is because that liblinear cannot read the original
+	 * data format privided by Prof., so before calling read_problem() we have to change
+	 * the data format.
+	 *
+	 */
 	string transformed_train_set_name;
 	if (transform_train_set)
 		transformed_train_set_name = transformLabel(train_set_name);
@@ -790,17 +813,17 @@ void naive_train(int argc, char **argv)
 }
 
 /*
-* liblinear cannot read the origin data set provided by Prof. so we need to transform the format of labels
-* of origin data set.
-*
-* Transform origin labels, such as A01B/03/08. If the section is A, no matter what class or subclass
-* or group it is in, then transform the label to 1; otherwise to 0.
-*
-* @param filename : the filename of data. The name of transformed file new_${filename}
-*
-* @return None
-*
-*/
+ * liblinear cannot read the origin data set provided by Prof. so we need to transform the format of labels
+ * of origin data set.
+ * 
+ * Transform origin labels, such as A01B/03/08. If the section is A, no matter what class or subclass
+ * or group it is in, then transform the label to 1; otherwise to 0.
+ *
+ * @param filename : the filename of data. The name of transformed file new_${filename}
+ *
+ * @return None
+ *
+ */
 string transformLabel(string filename)
 {
 	cout << "tranforming labels\n";
@@ -867,8 +890,8 @@ string changeFileName(const string& oFileName)
 }
 
 /*
-* split text according to delimiter
-*/
+ * split text according to delimiter
+ */
 vector<string> split(const string& text, char delim)
 {
 	vector<string> ret;
@@ -1067,6 +1090,7 @@ void parse_command_line(int argc, char **argv, char *train_set_name, char *test_
 // read in a problem (in libsvm format)
 void read_problem(const char *filename)
 {
+	cout << "start reading problem\n";
 	int max_index, inst_max_index, i;
 	size_t elements, j;
 	FILE *fp = fopen(filename, "r");
@@ -1164,6 +1188,7 @@ void read_problem(const char *filename)
 		prob.n = max_index;
 
 	fclose(fp);
+	cout << "reading problem finished\n\n";
 }
 
 void exit_input_error(int line_num)
