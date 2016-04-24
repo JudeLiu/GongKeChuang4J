@@ -61,3 +61,7 @@ I implement random decomposition method to train min-max model. Using parameter 
 #priori-knowledge-based decomposition MIN-MAX model
 Using parameter "-s 2 -c 1" will achieve best performance.
 
+#Performance
+priori task decomposition: ~234.381s
+
+This is toooooooooooo slow.
