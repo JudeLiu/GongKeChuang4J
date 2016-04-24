@@ -710,7 +710,7 @@ void __naive_train(char *test_set_name)
 	double* dec_values = new double[model_->nr_class];
 	for (int i = 0; i<prob.l; i++)
 	{
-		double label = predict_values(model_, prob.x[i], dec_values);
+		predict_values(model_, prob.x[i], dec_values);
 		if ((dec_values[0] - threshold) >= 0.001)
 			pred_label[i] = model_->label[0];
 		else
@@ -726,7 +726,7 @@ void __naive_train(char *test_set_name)
 	/*
 	 * compute F1
 	 */
-	it TP = 0, FP = 0, FN = 0, TN = 0;
+	int TP = 0, FP = 0, FN = 0, TN = 0;
 	double p, r, F1, TPR, FPR;
 	for (int i = 0; i<prob.l; i++)
 	{
