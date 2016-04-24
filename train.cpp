@@ -281,13 +281,13 @@ void __min_max_train(char* test_set_name)
         {
             if (maxUnit[i] == 1) //true positive
                 TP++;
-            else
-                FP++;
-        }
-        else//negative
-        {
-            if (maxUnit[i] == 1)
+            else//false negative
                 FN++;
+        }
+        else
+        {
+            if (maxUnit[i] == 1) //false positive
+                FP++;
             else
                 TN++;
         }
@@ -622,13 +622,13 @@ void __priori_min_max_train(char* train_set_name, char* test_set_name)
         {
             if (maxUnit[i] == 1) //true positive
                 TP++;
-            else
-                FP++;
-        }
-        else//negative
-        {
-            if (maxUnit[i] == 1)
+            else//false negative
                 FN++;
+        }
+        else
+        {
+            if (maxUnit[i] == 1) //false positive
+                FP++;
             else
                 TN++;
         }
@@ -725,17 +725,18 @@ void __naive_train(char *test_set_name)
     double p, r, F1, TPR, FPR;
     for (int i = 0; i<prob.l; i++)
     {
+
         if (prob.y[i] == 1)
         {
             if (pred_label[i] == 1) //true positive
                 TP++;
-            else
-                FP++;
-        }
-        else//negative
-        {
-            if (pred_label[i] == 1)
+            else//false negative
                 FN++;
+        }
+        else
+        {
+            if (pred_label[i] == 1) //false positive
+                FP++;
             else
                 TN++;
         }

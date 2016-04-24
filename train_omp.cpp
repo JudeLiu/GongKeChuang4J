@@ -282,13 +282,13 @@ void __min_max_train(char* test_set_name)
 		{
 			if (maxUnit[i] == 1) //true positive
 				TP++;
-			else
-				FP++;
-		}
-		else//negative
-		{
-			if (maxUnit[i] == 1)
+			else//false negative
 				FN++;
+		}
+		else
+		{
+			if (maxUnit[i] == 1) //false positive
+				FP++;
 			else
 				TN++;
 		}
@@ -511,19 +511,21 @@ void __priori_min_max_train(char* train_set_name, char* test_set_name)
 	start = clock();
 	int nr_class = sub_models[0]->nr_class;
 	vector<vector<int>> pred_vote(subprobNo_A * subprobNo_NA);
-	double* dec_values = new double[nr_class];
 
-//#pragma omp parallel for
 	for (int i = 0; i < pred_vote.size(); i++)
 	{
 		pred_vote[i] = vector<int>(prob.l, 0);
+		#pragma omp parallel for
 		for (int k = 0; k < prob.l; k++)
 		{
-			double label = predict_values(sub_models[i], prob.x[k], dec_values);
+			double* dec_values = new double[nr_class];
+			predict_values(sub_models[i], prob.x[k], dec_values);
 			if ((dec_values[0] - threshold) >= 0.001)
 				pred_vote[i][k] = sub_models[i]->label[0];
 			else
 				pred_vote[i][k] = sub_models[i]->label[1];
+
+			delete[] dec_values;
 			/*
 			pred_vote[i].push_back(predict(
 			sub_models[i],
@@ -532,7 +534,6 @@ void __priori_min_max_train(char* train_set_name, char* test_set_name)
 		}
 	}
 	
-	delete[] dec_values;
 	stop = clock();
 	cout << "subtasks vote cost:" << (stop - start)*1. / CLOCKS_PER_SEC << "s\n\n";
 	total += stop - start;
@@ -627,13 +628,13 @@ void __priori_min_max_train(char* train_set_name, char* test_set_name)
 		{
 			if (maxUnit[i] == 1) //true positive
 				TP++;
-			else
-				FP++;
-		}
-		else//negative
-		{
-			if (maxUnit[i] == 1)
+			else//false negative
 				FN++;
+		}
+		else
+		{
+			if (maxUnit[i] == 1) //false positive
+				FP++;
 			else
 				TN++;
 		}
@@ -730,17 +731,18 @@ void __naive_train(char *test_set_name)
 	double p, r, F1, TPR, FPR;
 	for (int i = 0; i<prob.l; i++)
 	{
+
 		if (prob.y[i] == 1)
 		{
 			if (pred_label[i] == 1) //true positive
 				TP++;
-			else
-				FP++;
-		}
-		else//negative
-		{
-			if (pred_label[i] == 1)
+			else//false negative
 				FN++;
+		}
+		else
+		{
+			if (pred_label[i] == 1) //false positive
+				FP++;
 			else
 				TN++;
 		}
