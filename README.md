@@ -28,6 +28,8 @@ Since the training set is quite large(actually the training set provided by prof
 - model/ : an empty folder to contain saved model files.
 
 #How to build
+(Notice that this project is successfully built on win10 + MINGW and Ubuntu 15.02, and I did not test other OS or versions.)
+
 simply type
 ```
     cd /path/to/this/project
@@ -45,6 +47,7 @@ simply type
 mkdir data and cp training set and test set are optional.
 
 The first argument of ./train decides the training methods:
+
 - n for naive LIBLINEAR training method
 - r for random decomposition minmax method
 - p for priori-knowledge-base decomposition minmax method
@@ -68,7 +71,16 @@ Using parameter "-s 2 -c 1" will achieve best performance.
 
 > I declared a unorderded_map<string,int> foo. Each insertion such as foo["a"] = 1 on VS costs about 1~2 ms, which is 40 times slower than the program compiled by g++. So I abandoned VS in the end.
 
-AUC
-|naive|random|priori|
+AUC:
+
+| naive| random| priori|
 |--|--|--|
-|0.9895186609889807| 0.9897060809324145| 0.99055902517219 |
+| 0.989518 | 0.989706 | 0.990559 |
+
+|classifier_type| parallel(y/n)| total time(s)| decomp(s)| training time(s)| predict time(s)| F1| accuracy(%)|
+|--|--|--|--|--|--|--|--|--|
+|priori| y|17.50 |1.98 |7.37 |4.099+0.038+4.014|0.93 |96.79 |
+|priori| n|47.71 |2.15 |25.10 | 14.249+0.04+6.164|0.93 |96.79 |
+|random| n|5.03 |0.01 |4.22 |0.088+0+0.71|0.93 |96.46 |
+|random| y|1.41 |0.01 |1.11 | 0.09+0.002+0.209|0.93 |96.55 |
+|naive| n|1.93 |0.00 |1.92 |0.02 |0.93 |96.55 |
