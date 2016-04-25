@@ -1,3 +1,5 @@
+[TOC]
+
 #Introduction
 This project is the implementation of SJTU Gong Ke Chuang(工科创) 4J.
 
@@ -62,6 +64,11 @@ I implement random decomposition method to train min-max model. Using parameter 
 Using parameter "-s 2 -c 1" will achieve best performance.
 
 #Performance
-priori task decomposition: ~234.381s
+> In the very beginning I used M$ visual studio to compile and run this program. Astonishingly, it costs above 230s to decompose subtasks, whihe g++ compiled program costs only 5 seconds. I debugged for a while and found out where the problem was.
 
-This is toooooooooooo slow.
+> I declared a unorderded_map<string,int> foo. Each insertion such as foo["a"] = 1 on VS costs about 1~2 ms, which is 40 times slower than the program compiled by g++. So I abandoned VS in the end.
+
+AUC
+|naive|random|priori|
+|--|--|--|
+|0.9895186609889807| 0.9897060809324145| 0.99055902517219 |
