@@ -27,6 +27,7 @@ int main(int argc, char** argv)
     {
     case 'r':
         param.solver_type = 5;
+        param.eps = 0.01
         cout << "random decomposition minmax\n";
         model_name = "model/random_minmax";
         min_max_train(argc, argv);
