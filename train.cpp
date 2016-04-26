@@ -27,10 +27,10 @@ int main(int argc, char** argv)
     {
     case 'r':
         param.solver_type = 5;
-        param.eps = 0.01
+        param.eps = 0.01;
         cout << "random decomposition minmax\n";
         model_name = "model/random_minmax";
-        min_max_train(argc, argv);
+        random_min_max_train(argc, argv);
         break;
     case 'p':
         param.solver_type = 2;
@@ -55,7 +55,7 @@ int main(int argc, char** argv)
 /*
  * decompose origin training set into subprobNo_A*subprobNo_NA groups,
  */
-void __min_max_train(char* test_set_name)
+void __random_min_max_train(char* test_set_name)
 {
     cout << "start decomposing\n";
     clock_t start = clock(), stop, total;
@@ -308,7 +308,7 @@ void __min_max_train(char* test_set_name)
         << "accuracy = " << ((TP + TN)*1.0 / prob.l * 100) << "%\n";
 }
 
-void min_max_train(int argc, char** argv)
+void random_min_max_train(int argc, char** argv)
 {
     char* train_set_name = new char[1024]; //random::train_set_name new here
     char* test_set_name = new char[1024]; //random::test_set_name new here
@@ -345,7 +345,7 @@ void min_max_train(int argc, char** argv)
         exit(1);
     }
 
-    __min_max_train(test_set_name);
+    __random_min_max_train(test_set_name);
 
     cout << "parameters: ";
     for (int i = 1; i<argc; i++)
