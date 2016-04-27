@@ -235,19 +235,19 @@ void __random_min_max_train(char* test_set_name)
 	 * do MAX, if one predict 1, then predict 1; otherwise predict 0
 	 */
 	cout << "start MAX\n";
-	vector<int> maxUnit(prob.l, 0);
+	vector<int> maxUnit(prob.l,0);
+
 	start = clock();
-#pragma omp parallel for
 	for (int i = 0; i<prob.l; i++)
 	{
-		for (auto minIter : minUnit)
+		for(int j = 0; j<minUnit.size(); j++)
 		{
-			maxUnit[i] += minIter[i];
+			if(minUnit[j][i] == 1)
+			{
+				maxUnit[i] = 1;
+				break;
+			}
 		}
-		if (maxUnit[i]>0)
-			maxUnit[i] = 1;
-		else
-			maxUnit[i] = 0;
 	}
 	stop = clock();
 	total += stop - start;
@@ -563,7 +563,6 @@ void __priori_min_max_train(char* train_set_name, char* test_set_name)
 	//MIN, if all predict i, the predict 1; otherwise predict 0
 	for (int idx1 = 0; idx1 < subprobNo_A; idx1++)
 	{
-#pragma omp parallel for
 		for (int k = 0; k < prob.l; k++)
 		{
 			if (minUnit[idx1][k] == subprobNo_NA)
@@ -580,21 +579,18 @@ void __priori_min_max_train(char* train_set_name, char* test_set_name)
 	 * do MAX, if one predict 1, then predict 1; otherwise predict 0
 	 */
 	cout << "start MAX\n";
-	vector<int> maxUnit(prob.l, 0);
+	//vector<int> maxUnit(prob.l, 0);
+	vector<int> maxUnit(prob.l,0);
 	start = clock();
 
-#pragma omp parallel for
 	for (int i = 0; i<prob.l; i++)
-	{
-		for (auto minIter : minUnit)
-		{
-			maxUnit[i] += minIter[i];
-		}
-		if (maxUnit[i]>0)
-			maxUnit[i] = 1;
-		else
-			maxUnit[i] = 0;
-	}
+		for(int j = 0; j<minUnit.size(); j++)
+			if(minUnit[j][i] == 1)
+			{
+				maxUnit[i] = 1;
+				break;
+			}
+
 	stop = clock();
 	total += stop - start;
 	cout << "MAX cost: " << (stop - start)*1. / CLOCKS_PER_SEC << "s\n\n";

@@ -234,19 +234,19 @@ void __random_min_max_train(char* test_set_name)
      * do MAX, if one predict 1, then predict 1; otherwise predict 0
      */
     cout << "start MAX\n";
-    vector<int> maxUnit(prob.l, 0);
+    vector<int> maxUnit(prob.l,0);
     start = clock();
 
     for (int i = 0; i<prob.l; i++)
     {
-        for (auto minIter : minUnit)
+        for(int j = 0; j<minUnit.size(); j++)
         {
-            maxUnit[i] += minIter[i];
+            if(minUnit[j][i] == 1)
+            {
+                maxUnit[i] = 1;
+                break;
+            }
         }
-        if (maxUnit[i]>0)
-            maxUnit[i] = 1;
-        else
-            maxUnit[i] = 0;
     }
     stop = clock();
     total += stop - start;
@@ -537,6 +537,7 @@ void __priori_min_max_train(char* train_set_name, char* test_set_name)
 
     /*
      * count vote and do MIN
+     * if all predict i, the predict 1; otherwise predict 0
      */
     cout << "start MIN\n";
     vector<vector<int>> minUnit(subprobNo_A);
@@ -556,7 +557,6 @@ void __priori_min_max_train(char* train_set_name, char* test_set_name)
         }
     }
 
-    //MIN, if all predict i, the predict 1; otherwise predict 0
     for (int idx1 = 0; idx1 < subprobNo_A; idx1++)
     {
         for (int k = 0; k < prob.l; k++)
@@ -580,14 +580,14 @@ void __priori_min_max_train(char* train_set_name, char* test_set_name)
 
     for (int i = 0; i<prob.l; i++)
     {
-        for (auto minIter : minUnit)
+        for(int j = 0; j<minUnit.size(); j++)
         {
-            maxUnit[i] += minIter[i];
+            if(minUnit[j][i] == 1)
+            {
+                maxUnit[i] = 1;
+                break;
+            }
         }
-        if (maxUnit[i]>0)
-            maxUnit[i] = 1;
-        else
-            maxUnit[i] = 0;
     }
     stop = clock();
     total += stop - start;
