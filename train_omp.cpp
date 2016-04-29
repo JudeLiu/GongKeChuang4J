@@ -34,12 +34,14 @@ int main(int argc, char** argv)
 		break;
 	case 'p':
 		param.solver_type = 2;
+		param.eps = 0.01;
 		cout << "priori-knowledge-based minmax\n";
 		model_name = "model/priori_minmax";
 		priori_min_max_train(argc, argv);
 		break;
 	case 'n':
 		param.solver_type = 5;
+		param.eps = 0.01;
 		cout << "naive liblinear\n";
 		model_name = "model/naive";
 		naive_train(argc, argv);

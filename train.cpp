@@ -34,6 +34,7 @@ int main(int argc, char** argv)
         break;
     case 'p':
         param.solver_type = 2;
+        param.eps = 0.001;
         cout << "priori-knowledge-based minmax\n";
         model_name = "model/priori_minmax";
         priori_min_max_train(argc, argv);
